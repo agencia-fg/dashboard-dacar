@@ -21,6 +21,7 @@ export interface VtexCustomer {
 export interface VtexOrder {
   orderId: string
   clientProfileData: { email: string; firstName: string; lastName: string }
+  totalValue: number
   value: number
   creationDate: string
   status: string

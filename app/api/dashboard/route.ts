@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const enriched = customers.map((c) => {
       const customerOrders = ordersByEmail.get(c.email?.toLowerCase()) ?? []
-      const totalSpent = customerOrders.reduce((sum, o) => sum + (o.value ?? 0) / 100, 0)
+      const totalSpent = customerOrders.reduce((sum, o) => sum + (o.totalValue ?? o.value ?? 0) / 100, 0)
       const firstPurchaseDate =
         customerOrders.length > 0
           ? customerOrders.sort(
