@@ -32,7 +32,7 @@ interface VendasSummary {
   isSample: boolean; sampleSize: number
 }
 interface VendasCustomer {
-  email: string; name: string; ordersInPeriod: number; totalSpent: number
+  email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number
   totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
 }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[] }
@@ -316,32 +316,40 @@ export default function Dashboard() {
                   {/* Pie recorrência */}
                   <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                     <h2 className="text-sm font-semibold text-gray-300 mb-4">Novos vs. Recorrentes</h2>
-                    <div className="flex items-center gap-6">
-                      <ResponsiveContainer width={160} height={160}>
-                        <PieChart>
-                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
-                            {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                          </Pie>
-                          <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="space-y-3 flex-1">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="w-3 h-3 rounded-full bg-purple-500 inline-block" />
-                            <span className="text-sm text-gray-400">Recorrentes</span>
+                    <div className="flex items-center gap-4">
+                      <div className="relative" style={{ width: 160, height: 160, flexShrink: 0 }}>
+                        <ResponsiveContainer width={160} height={160}>
+                          <PieChart>
+                            <Pie data={pieData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} dataKey="value" paddingAngle={3}>
+                              {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                            </Pie>
+                            <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
+                              formatter={(v) => [Number(v), '']} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="space-y-4 flex-1">
+                        {[
+                          { label: 'Recorrentes', count: vendas.summary.recurringCount, revenue: vendas.summary.recurringRevenue, color: 'bg-purple-500', pct: vendas.summary.uniqueCustomers > 0 ? ((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1) : '0' },
+                          { label: 'Novos', count: vendas.summary.newCount, revenue: vendas.summary.newRevenue, color: 'bg-blue-500', pct: vendas.summary.uniqueCustomers > 0 ? ((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1) : '0' },
+                        ].map(item => (
+                          <div key={item.label}>
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-3 h-3 rounded-full ${item.color} inline-block`} />
+                                <span className="text-sm text-gray-400">{item.label}</span>
+                              </div>
+                              <span className="text-sm font-bold text-white">{item.pct}%</span>
+                            </div>
+                            <div className="w-full bg-gray-800 rounded-full h-1.5">
+                              <div className={`${item.color} h-1.5 rounded-full`} style={{ width: `${item.pct}%` }} />
+                            </div>
+                            <div className="flex justify-between mt-1">
+                              <span className="text-xs text-gray-500">{item.count} clientes</span>
+                              <span className="text-xs text-gray-500">{fmt(item.revenue)}</span>
+                            </div>
                           </div>
-                          <p className="text-xl font-bold text-white">{vendas.summary.recurringCount}</p>
-                          <p className="text-xs text-gray-500">{fmt(vendas.summary.recurringRevenue)}</p>
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
-                            <span className="text-sm text-gray-400">Novos</span>
-                          </div>
-                          <p className="text-xl font-bold text-white">{vendas.summary.newCount}</p>
-                          <p className="text-xs text-gray-500">{fmt(vendas.summary.newRevenue)}</p>
-                        </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -388,6 +396,7 @@ export default function Dashboard() {
                         <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
                           <th className="pb-2 pr-4">Nome</th>
                           <th className="pb-2 pr-4">E-mail</th>
+                          <th className="pb-2 pr-4">Telefone</th>
                           <th className="pb-2 pr-4">Tipo</th>
                           <th className="pb-2 pr-4">Pedidos no período</th>
                           <th className="pb-2 pr-4">Total histórico</th>
@@ -399,6 +408,7 @@ export default function Dashboard() {
                           <tr key={c.email} className="hover:bg-gray-800/50 transition-colors">
                             <td className="py-2 pr-4 text-gray-200">{c.name}</td>
                             <td className="py-2 pr-4 text-gray-400">{c.email}</td>
+                            <td className="py-2 pr-4 text-gray-400">{c.phone || '—'}</td>
                             <td className="py-2 pr-4">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isRecurring ? 'bg-purple-900/60 text-purple-400' : 'bg-blue-900/60 text-blue-400'}`}>
                                 {c.isRecurring ? 'Recorrente' : 'Novo'}

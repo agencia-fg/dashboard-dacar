@@ -23,7 +23,7 @@ interface OrderListItem {
 
 interface OrderDetail {
   orderId: string
-  clientProfileData: { email: string; firstName: string; lastName: string }
+  clientProfileData: { email: string; firstName: string; lastName: string; phone?: string }
   value: number
   creationDate: string
   status: string
@@ -99,15 +99,17 @@ export async function GET(req: NextRequest) {
     const details = await batchProcess(sampleOrders, 15, (o) => fetchOrderDetail(o.orderId))
 
     // 3. Agrupa por email
-    const byEmail = new Map<string, { name: string; orderCount: number; totalSpent: number; orderIds: string[] }>()
+    const byEmail = new Map<string, { name: string; phone: string; orderCount: number; totalSpent: number; orderIds: string[] }>()
     for (const detail of details) {
       if (!detail?.clientProfileData?.email) continue
       const email = detail.clientProfileData.email.toLowerCase()
       const name = `${detail.clientProfileData.firstName} ${detail.clientProfileData.lastName}`.trim()
+      const phone = detail.clientProfileData.phone ?? ''
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, orderCount: 0, totalSpent: 0, orderIds: [] })
+        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, orderIds: [] })
       }
       const entry = byEmail.get(email)!
+      if (!entry.phone && phone) entry.phone = phone
       entry.orderCount++
       entry.totalSpent += (detail.value ?? 0) / 100
       entry.orderIds.push(detail.orderId)
@@ -134,6 +136,7 @@ export async function GET(req: NextRequest) {
       return {
         email,
         name: info.name,
+        phone: info.phone,
         ordersInPeriod: info.orderCount,
         totalSpent: info.totalSpent,
         totalAllTime: rec?.totalAllTime ?? info.orderCount,
