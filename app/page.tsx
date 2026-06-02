@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { format, subDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
@@ -26,16 +26,17 @@ interface Customer {
 interface DashboardData { summary: Summary; byDay: DayData[]; customers: Customer[] }
 
 interface VendasSummary {
-  totalOrders: number; totalRevenue: number; uniqueCustomers: number
+  totalOrders: number; totalRevenueCaptada: number; totalRevenuePaga: number; uniqueCustomers: number
   recurringCount: number; newCount: number
   recurringRevenue: number; newRevenue: number
   avgDaysToPurchase: number | null
   isSample: boolean; sampleSize: number
 }
 interface VendasCustomer {
-  email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number
+  email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number; paidSpent: number
   firstOrderDate: string; lastOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
   registeredAt: string | null; daysToPurchase: number | null
+  utmSource: string | null; utmMedium: string | null; utmCampaign: string | null
 }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[] }
 
@@ -73,6 +74,8 @@ export default function Dashboard() {
   const [vendasError, setVendasError] = useState('')
   const [vendasSearch, setVendasSearch] = useState('')
   const [vendasFilter, setVendasFilter] = useState<'all' | 'recurring' | 'new'>('all')
+  const [sortKey, setSortKey] = useState<keyof VendasCustomer>('totalSpent')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   const loadCadastros = useCallback(async () => {
     setLoading(true); setError('')
@@ -117,11 +120,27 @@ export default function Dashboard() {
     return matchSearch && matchStatus
   })
 
-  const filteredVendas = (vendas?.customers ?? []).filter((c) => {
-    const matchSearch = vendasSearch === '' || c.email?.toLowerCase().includes(vendasSearch.toLowerCase()) || c.name?.toLowerCase().includes(vendasSearch.toLowerCase())
-    const matchFilter = vendasFilter === 'all' || (vendasFilter === 'recurring' && c.isRecurring) || (vendasFilter === 'new' && !c.isRecurring)
-    return matchSearch && matchFilter
-  })
+  const filteredVendas = useMemo(() => {
+    const filtered = (vendas?.customers ?? []).filter((c) => {
+      const matchSearch = vendasSearch === '' || c.email?.toLowerCase().includes(vendasSearch.toLowerCase()) || c.name?.toLowerCase().includes(vendasSearch.toLowerCase())
+      const matchFilter = vendasFilter === 'all' || (vendasFilter === 'recurring' && c.isRecurring) || (vendasFilter === 'new' && !c.isRecurring)
+      return matchSearch && matchFilter
+    })
+    return [...filtered].sort((a, b) => {
+      const av = a[sortKey] ?? ''
+      const bv = b[sortKey] ?? ''
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [vendas, vendasSearch, vendasFilter, sortKey, sortDir])
+
+  const handleSort = (key: keyof VendasCustomer) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('desc') }
+  }
+  const SortIcon = ({ k }: { k: keyof VendasCustomer }) => (
+    <span className="ml-1 opacity-50">{sortKey === k ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+  )
 
   const funnelData = data
     ? [
@@ -317,13 +336,14 @@ export default function Dashboard() {
                 )}
 
                 {/* KPIs */}
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   <KpiCard icon={<ShoppingCart size={20} />} label="Total de Pedidos" value={vendas.summary.totalOrders} color="blue" />
-                  <KpiCard icon={<DollarSign size={20} />} label="Receita Total" value={fmt(vendas.summary.totalRevenue)} color="yellow" />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Captada" value={fmt(vendas.summary.totalRevenueCaptada)} sub="todos os pedidos" color="yellow" />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Paga" value={fmt(vendas.summary.totalRevenuePaga)} sub="pagamento confirmado" color="green" />
                   <KpiCard icon={<Repeat2 size={20} />} label="Clientes Recorrentes" value={vendas.summary.recurringCount}
                     sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="purple" />
                   <KpiCard icon={<UserCheck size={20} />} label="Clientes Novos" value={vendas.summary.newCount}
-                    sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="green" />
+                    sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="blue" />
                   <KpiCard icon={<TrendingUp size={20} />} label="Média: cadastro → compra"
                     value={vendas.summary.avgDaysToPurchase !== null ? `${vendas.summary.avgDaysToPurchase} dias` : '—'}
                     sub="apenas clientes novos" color="red" />
@@ -382,7 +402,7 @@ export default function Dashboard() {
                       </div>
                       <p className="text-2xl font-bold text-white">{fmt(vendas.summary.recurringRevenue)}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {vendas.summary.totalRevenue > 0 ? `${((vendas.summary.recurringRevenue / vendas.summary.totalRevenue) * 100).toFixed(1)}% da receita total` : ''}
+                        {vendas.summary.totalRevenueCaptada > 0 ? `${((vendas.summary.recurringRevenue / vendas.summary.totalRevenueCaptada) * 100).toFixed(1)}% da receita captada` : ''}
                       </p>
                     </div>
                     <div className="border-t border-gray-800 pt-4">
@@ -392,7 +412,7 @@ export default function Dashboard() {
                       </div>
                       <p className="text-2xl font-bold text-white">{fmt(vendas.summary.newRevenue)}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {vendas.summary.totalRevenue > 0 ? `${((vendas.summary.newRevenue / vendas.summary.totalRevenue) * 100).toFixed(1)}% da receita total` : ''}
+                        {vendas.summary.totalRevenueCaptada > 0 ? `${((vendas.summary.newRevenue / vendas.summary.totalRevenueCaptada) * 100).toFixed(1)}% da receita captada` : ''}
                       </p>
                     </div>
                   </div>
@@ -420,17 +440,21 @@ export default function Dashboard() {
                     <table className="text-xs" style={{ minWidth: '1100px', width: '100%' }}>
                       <thead>
                         <tr className="border-b border-gray-800 text-left text-gray-500 uppercase whitespace-nowrap">
-                          <th className="pb-2 pr-3">Nome</th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('name')}>Nome<SortIcon k="name" /></th>
                           <th className="pb-2 pr-3">E-mail</th>
                           <th className="pb-2 pr-3">Telefone</th>
-                          <th className="pb-2 pr-3">Tipo</th>
-                          <th className="pb-2 pr-3">Cadastro</th>
-                          <th className="pb-2 pr-3">1ª Compra</th>
-                          <th className="pb-2 pr-3">Última Compra</th>
-                          <th className="pb-2 pr-3">Dias cad.→compra</th>
-                          <th className="pb-2 pr-3">Ped.</th>
-                          <th className="pb-2 pr-3">Hist.</th>
-                          <th className="pb-2">Gasto</th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('isRecurring')}>Tipo<SortIcon k="isRecurring" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('registeredAt')}>Cadastro<SortIcon k="registeredAt" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('firstOrderDate')}>1ª Compra<SortIcon k="firstOrderDate" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('lastOrderDate')}>Última Compra<SortIcon k="lastOrderDate" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('daysToPurchase')}>Dias cad.→compra<SortIcon k="daysToPurchase" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('ordersInPeriod')}>Ped.<SortIcon k="ordersInPeriod" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalAllTime')}>Hist.<SortIcon k="totalAllTime" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalSpent')}>Captado<SortIcon k="totalSpent" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('paidSpent')}>Pago<SortIcon k="paidSpent" /></th>
+                          <th className="pb-2 pr-3">UTM Source</th>
+                          <th className="pb-2 pr-3">UTM Medium</th>
+                          <th className="pb-2">UTM Campaign</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
@@ -458,7 +482,11 @@ export default function Dashboard() {
                             <td className="py-2 pr-3 text-center">
                               <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
                             </td>
-                            <td className="py-2 text-gray-300">{fmt(c.totalSpent)}</td>
+                            <td className="py-2 pr-3 text-gray-300">{fmt(c.totalSpent)}</td>
+                            <td className="py-2 pr-3 text-gray-300">{c.paidSpent > 0 ? fmt(c.paidSpent) : '—'}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.utmSource || '—'}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.utmMedium || '—'}</td>
+                            <td className="py-2 text-gray-400">{c.utmCampaign || '—'}</td>
                           </tr>
                         ))}
                       </tbody>

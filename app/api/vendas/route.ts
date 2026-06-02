@@ -13,6 +13,13 @@ const headers = {
   'Content-Type': 'application/json',
 }
 
+// Status considerados como "pago"
+const PAID_STATUSES = new Set([
+  'payment-approved', 'invoiced', 'handling',
+  'ready-for-handling', 'waiting-for-fulfillment',
+  'shipped', 'delivered', 'order-completed',
+])
+
 interface OrderListItem {
   orderId: string
   clientName: string
@@ -21,12 +28,22 @@ interface OrderListItem {
   status: string
 }
 
+interface MarketingData {
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmipage?: string
+  utmiPart?: string
+  utmiCampaign?: string
+}
+
 interface OrderDetail {
   orderId: string
   clientProfileData: { email: string; firstName: string; lastName: string; phone?: string }
   value: number
   creationDate: string
   status: string
+  marketingData?: MarketingData
 }
 
 async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): Promise<{ list: OrderListItem[]; total: number }> {
@@ -39,9 +56,8 @@ async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): 
 
 async function fetchAllOrdersInPeriod(dateFrom: string, dateTo: string): Promise<OrderListItem[]> {
   const first = await fetchOrdersPage(dateFrom, dateTo, 1)
-  const pages = Math.min(Math.ceil(first.total / 100), 20) // max 2000 orders
+  const pages = Math.min(Math.ceil(first.total / 100), 20)
   if (pages <= 1) return first.list
-
   const remaining = await Promise.all(
     Array.from({ length: pages - 1 }, (_, i) =>
       fetchOrdersPage(dateFrom, dateTo, i + 2).then(r => r.list)
@@ -57,8 +73,6 @@ async function fetchOrderDetail(orderId: string): Promise<OrderDetail | null> {
   return res.json()
 }
 
-// VTEX gera emails no formato: original@email.com-hash.ct.vtex.com.br
-// Precisamos extrair o email original para buscar histórico corretamente
 function extractRealEmail(email: string): string {
   if (!email.endsWith('.ct.vtex.com.br')) return email
   const withoutSuffix = email.replace(/\.ct\.vtex\.com\.br$/, '')
@@ -69,7 +83,6 @@ function extractRealEmail(email: string): string {
 
 async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; firstOrderDate: string | null }> {
   const realEmail = extractRealEmail(email)
-  // Busca o total E a primeira compra de todos os tempos (orderBy=creationDate,asc)
   const [totalRes, firstRes] = await Promise.all([
     fetch(`https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(realEmail)}&per_page=1&page=1`, { headers }),
     fetch(`https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(realEmail)}&per_page=1&page=1&orderBy=creationDate,asc`, { headers }),
@@ -79,7 +92,6 @@ async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; 
   const firstOrderDate = firstData?.list?.[0]?.creationDate ?? null
   return { total, firstOrderDate }
 }
-
 
 async function fetchRegistrationDate(email: string): Promise<string | null> {
   const realEmail = extractRealEmail(email)
@@ -109,14 +121,23 @@ export async function GET(req: NextRequest) {
     // 1. Busca todos os pedidos do período
     const orders = await fetchAllOrdersInPeriod(dateFrom, dateTo)
     const totalOrders = orders.length
-    const totalRevenue = orders.reduce((s, o) => s + (o.totalValue ?? 0) / 100, 0)
+    const totalRevenueCaptada = orders.reduce((s, o) => s + (o.totalValue ?? 0) / 100, 0)
+    const totalRevenuePaga = orders
+      .filter(o => PAID_STATUSES.has(o.status))
+      .reduce((s, o) => s + (o.totalValue ?? 0) / 100, 0)
 
-    // 2. Pega detalhes de pedidos únicos (limitado a 300 para performance)
+    // 2. Pega detalhes (limitado a 300)
     const sampleOrders = orders.slice(0, 300)
     const details = await batchProcess(sampleOrders, 15, (o) => fetchOrderDetail(o.orderId))
 
-    // 3. Agrupa por email + primeira e última data de pedido no período
-    const byEmail = new Map<string, { name: string; phone: string; orderCount: number; totalSpent: number; firstOrderDate: string; lastOrderDate: string }>()
+    // 3. Agrupa por email
+    const byEmail = new Map<string, {
+      name: string; phone: string; orderCount: number
+      totalSpent: number; paidSpent: number
+      firstOrderDate: string; lastOrderDate: string
+      lastUtm: MarketingData | null
+    }>()
+
     for (const detail of details) {
       if (!detail?.clientProfileData?.email) continue
       const rawEmail = detail.clientProfileData.email.toLowerCase()
@@ -124,20 +145,27 @@ export async function GET(req: NextRequest) {
       const name = `${detail.clientProfileData.firstName} ${detail.clientProfileData.lastName}`.trim()
       const phone = detail.clientProfileData.phone ?? ''
       const orderDate = detail.creationDate ?? ''
+      const isPaid = PAID_STATUSES.has(detail.status)
+
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate })
+        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null })
       }
       const entry = byEmail.get(email)!
       if (!entry.phone && phone) entry.phone = phone
       if (orderDate && orderDate < entry.firstOrderDate) entry.firstOrderDate = orderDate
-      if (orderDate && orderDate > entry.lastOrderDate) entry.lastOrderDate = orderDate
+      if (orderDate && orderDate > entry.lastOrderDate) {
+        entry.lastOrderDate = orderDate
+        // UTM do pedido mais recente
+        if (detail.marketingData) entry.lastUtm = detail.marketingData
+      }
       entry.orderCount++
       entry.totalSpent += (detail.value ?? 0) / 100
+      if (isPaid) entry.paidSpent += (detail.value ?? 0) / 100
     }
 
     const uniqueEmails = Array.from(byEmail.keys())
 
-    // 4. Para cada cliente: histórico de pedidos + data de cadastro
+    // 4. Enriquece com histórico + cadastro
     const enrichData = await batchProcess(uniqueEmails, 8, async (email) => {
       const [orderInfo, registeredAt] = await Promise.all([
         fetchTotalOrdersByEmail(email),
@@ -147,7 +175,6 @@ export async function GET(req: NextRequest) {
       const ordersInPeriod = byEmail.get(email)?.orderCount ?? 0
       const ordersBeforePeriod = Math.max(0, totalAllTime - ordersInPeriod)
 
-      // Dias entre cadastro e primeira compra histórica
       let daysToPurchase: number | null = null
       if (registeredAt && firstOrderDateAllTime) {
         const diff = new Date(firstOrderDateAllTime).getTime() - new Date(registeredAt).getTime()
@@ -159,16 +186,18 @@ export async function GET(req: NextRequest) {
 
     const enrichMap = new Map(enrichData.map(r => [r.email, r]))
 
-    // 5. Monta lista de clientes com classificação
+    // 5. Monta lista final
     const customers = uniqueEmails.map(email => {
       const info = byEmail.get(email)!
       const enrich = enrichMap.get(email)
+      const utm = info.lastUtm
       return {
         email,
         name: info.name,
         phone: info.phone,
         ordersInPeriod: info.orderCount,
         totalSpent: info.totalSpent,
+        paidSpent: info.paidSpent,
         firstOrderDate: enrich?.firstOrderDateAllTime ?? info.firstOrderDate,
         lastOrderDate: info.lastOrderDate,
         totalAllTime: enrich?.totalAllTime ?? info.orderCount,
@@ -176,6 +205,9 @@ export async function GET(req: NextRequest) {
         ordersBeforePeriod: enrich?.ordersBeforePeriod ?? 0,
         registeredAt: enrich?.registeredAt ?? null,
         daysToPurchase: enrich?.daysToPurchase ?? null,
+        utmSource: utm?.utmSource ?? null,
+        utmMedium: utm?.utmMedium ?? null,
+        utmCampaign: utm?.utmCampaign ?? null,
       }
     }).sort((a, b) => b.totalSpent - a.totalSpent)
 
@@ -189,7 +221,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       summary: {
         totalOrders,
-        totalRevenue,
+        totalRevenueCaptada,
+        totalRevenuePaga,
         uniqueCustomers: uniqueEmails.length,
         recurringCount: recurringCustomers.length,
         newCount: newCustomers.length,
