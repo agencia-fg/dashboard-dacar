@@ -447,7 +447,7 @@ export default function Dashboard() {
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('registeredAt')}>Cadastro<SortIcon k="registeredAt" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('firstOrderDate')}>1ª Compra<SortIcon k="firstOrderDate" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('lastOrderDate')}>Última Compra<SortIcon k="lastOrderDate" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('daysToPurchase')}>Dias cad.→compra<SortIcon k="daysToPurchase" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('daysToPurchase')}>→Compra<SortIcon k="daysToPurchase" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('ordersInPeriod')}>Ped.<SortIcon k="ordersInPeriod" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalAllTime')}>Hist.<SortIcon k="totalAllTime" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalSpent')}>Captado<SortIcon k="totalSpent" /></th>
