@@ -57,8 +57,19 @@ async function fetchOrderDetail(orderId: string): Promise<OrderDetail | null> {
   return res.json()
 }
 
+// VTEX gera emails no formato: original@email.com-hash.ct.vtex.com.br
+// Precisamos extrair o email original para buscar histórico corretamente
+function extractRealEmail(email: string): string {
+  if (!email.endsWith('.ct.vtex.com.br')) return email
+  const withoutSuffix = email.replace(/\.ct\.vtex\.com\.br$/, '')
+  const lastDash = withoutSuffix.lastIndexOf('-')
+  if (lastDash === -1) return email
+  return withoutSuffix.substring(0, lastDash)
+}
+
 async function fetchTotalOrdersByEmail(email: string): Promise<number> {
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(email)}&per_page=1&page=1`
+  const realEmail = extractRealEmail(email)
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(realEmail)}&per_page=1&page=1`
   const res = await fetch(url, { headers })
   if (!res.ok) return 0
   const data = await res.json()
@@ -95,7 +106,8 @@ export async function GET(req: NextRequest) {
     const byEmail = new Map<string, { name: string; phone: string; orderCount: number; totalSpent: number; orderIds: string[] }>()
     for (const detail of details) {
       if (!detail?.clientProfileData?.email) continue
-      const email = detail.clientProfileData.email.toLowerCase()
+      const rawEmail = detail.clientProfileData.email.toLowerCase()
+      const email = extractRealEmail(rawEmail)
       const name = `${detail.clientProfileData.firstName} ${detail.clientProfileData.lastName}`.trim()
       const phone = detail.clientProfileData.phone ?? ''
       if (!byEmail.has(email)) {
