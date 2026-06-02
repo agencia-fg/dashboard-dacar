@@ -79,10 +79,8 @@ async function fetchTotalOrdersByEmail(email: string): Promise<number> {
 
 async function fetchRegistrationDate(email: string): Promise<string | null> {
   const realEmail = extractRealEmail(email)
-  // _where value must be fully encoded — o '=' dentro do valor vira %3D
-  // caso contrário o servidor interpreta como novo query param
-  const whereValue = encodeURIComponent(`email=${realEmail}`)
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&_where=${whereValue}&_sort=createdIn%20ASC`
+  // MasterData v1: filtro direto por campo como query param (sem _where)
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&email=${encodeURIComponent(realEmail)}&_sort=createdIn%20ASC`
   const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-0' } })
   if (!res.ok) return null
   const data = await res.json()
