@@ -28,7 +28,7 @@ interface DashboardData { summary: Summary; byDay: DayData[]; customers: Custome
 interface VendasSummary {
   totalOrders: number; totalRevenueCaptada: number; totalRevenuePaga: number; uniqueCustomers: number
   recurringCount: number; newCount: number
-  recurringRevenue: number; newRevenue: number
+  recurringRevenue: number; recurringPaidRevenue: number; newRevenue: number; newPaidRevenue: number
   avgDaysToPurchase: number | null
   isSample: boolean; sampleSize: number
 }
@@ -368,8 +368,8 @@ export default function Dashboard() {
                       </div>
                       <div className="space-y-4 flex-1">
                         {[
-                          { label: 'Recorrentes', count: vendas.summary.recurringCount, revenue: vendas.summary.recurringRevenue, color: 'bg-purple-500', pct: vendas.summary.uniqueCustomers > 0 ? ((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1) : '0' },
-                          { label: 'Novos', count: vendas.summary.newCount, revenue: vendas.summary.newRevenue, color: 'bg-blue-500', pct: vendas.summary.uniqueCustomers > 0 ? ((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1) : '0' },
+                          { label: 'Recorrentes', count: vendas.summary.recurringCount, revenue: vendas.summary.recurringRevenue, paidRevenue: vendas.summary.recurringPaidRevenue, color: 'bg-purple-500', pct: vendas.summary.uniqueCustomers > 0 ? ((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1) : '0' },
+                          { label: 'Novos', count: vendas.summary.newCount, revenue: vendas.summary.newRevenue, paidRevenue: vendas.summary.newPaidRevenue, color: 'bg-blue-500', pct: vendas.summary.uniqueCustomers > 0 ? ((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1) : '0' },
                         ].map(item => (
                           <div key={item.label}>
                             <div className="flex items-center justify-between mb-1">
@@ -384,7 +384,10 @@ export default function Dashboard() {
                             </div>
                             <div className="flex justify-between mt-1">
                               <span className="text-xs text-gray-500">{item.count} clientes</span>
-                              <span className="text-xs text-gray-500">{fmt(item.revenue)}</span>
+                              <span className="text-xs text-gray-500">Captado: {fmt(item.revenue)}</span>
+                            </div>
+                            <div className="flex justify-end mt-0.5">
+                              <span className="text-xs text-gray-600">Pago: {fmt(item.paidRevenue)}</span>
                             </div>
                           </div>
                         ))}
@@ -395,26 +398,29 @@ export default function Dashboard() {
                   {/* Receita por tipo */}
                   <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-4 justify-center">
                     <h2 className="text-sm font-semibold text-gray-300">Receita por tipo</h2>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="w-3 h-3 rounded-full bg-purple-500 inline-block" />
-                        <span className="text-xs text-gray-400">Recorrentes</span>
+                    {[
+                      { label: 'Recorrentes', color: 'bg-purple-500', revenue: vendas.summary.recurringRevenue, paid: vendas.summary.recurringPaidRevenue, total: vendas.summary.totalRevenueCaptada },
+                      { label: 'Novos', color: 'bg-blue-500', revenue: vendas.summary.newRevenue, paid: vendas.summary.newPaidRevenue, total: vendas.summary.totalRevenueCaptada },
+                    ].map((item, i) => (
+                      <div key={item.label} className={i > 0 ? 'border-t border-gray-800 pt-4' : ''}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`w-3 h-3 rounded-full ${item.color} inline-block`} />
+                          <span className="text-xs text-gray-400">{item.label}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-xs text-gray-500 mb-0.5">Captado</p>
+                            <p className="text-lg font-bold text-white">{fmt(item.revenue)}</p>
+                            <p className="text-xs text-gray-600">{item.total > 0 ? `${((item.revenue / item.total) * 100).toFixed(1)}%` : ''}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 mb-0.5">Pago</p>
+                            <p className="text-lg font-bold text-green-400">{fmt(item.paid)}</p>
+                            <p className="text-xs text-gray-600">{item.revenue > 0 ? `${((item.paid / item.revenue) * 100).toFixed(1)}% do captado` : ''}</p>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-2xl font-bold text-white">{fmt(vendas.summary.recurringRevenue)}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {vendas.summary.totalRevenueCaptada > 0 ? `${((vendas.summary.recurringRevenue / vendas.summary.totalRevenueCaptada) * 100).toFixed(1)}% da receita captada` : ''}
-                      </p>
-                    </div>
-                    <div className="border-t border-gray-800 pt-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
-                        <span className="text-xs text-gray-400">Novos</span>
-                      </div>
-                      <p className="text-2xl font-bold text-white">{fmt(vendas.summary.newRevenue)}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {vendas.summary.totalRevenueCaptada > 0 ? `${((vendas.summary.newRevenue / vendas.summary.totalRevenueCaptada) * 100).toFixed(1)}% da receita captada` : ''}
-                      </p>
-                    </div>
+                    ))}
                   </div>
                 </div>
 
