@@ -65,13 +65,6 @@ async function fetchTotalOrdersByEmail(email: string): Promise<number> {
   return data.paging?.total ?? 0
 }
 
-async function fetchOrdersBeforeDateByEmail(email: string, beforeDate: string): Promise<number> {
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(email)}&f_creationDate=creationDate:[2010-01-01T00:00:00.000Z+TO+${beforeDate}T23:59:59.999Z]&per_page=1&page=1`
-  const res = await fetch(url, { headers })
-  if (!res.ok) return 0
-  const data = await res.json()
-  return data.paging?.total ?? 0
-}
 
 async function batchProcess<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = []
@@ -117,14 +110,13 @@ export async function GET(req: NextRequest) {
 
     const uniqueEmails = Array.from(byEmail.keys())
 
-    // 4. Para cada cliente, verifica se tem pedidos ANTES do período (recorrência)
-    // e quantos pedidos totais tem
+    // 4. Para cada cliente, busca total histórico de pedidos
+    // Recorrente = tem mais pedidos no histórico do que no período atual
     const recurrenceData = await batchProcess(uniqueEmails, 10, async (email) => {
-      const [totalAllTime, beforePeriod] = await Promise.all([
-        fetchTotalOrdersByEmail(email),
-        fetchOrdersBeforeDateByEmail(email, dateFrom),
-      ])
-      return { email, totalAllTime, isRecurring: beforePeriod > 0, ordersBeforePeriod: beforePeriod }
+      const totalAllTime = await fetchTotalOrdersByEmail(email)
+      const ordersInPeriod = byEmail.get(email)?.orderCount ?? 0
+      const ordersBeforePeriod = Math.max(0, totalAllTime - ordersInPeriod)
+      return { email, totalAllTime, isRecurring: ordersBeforePeriod > 0, ordersBeforePeriod }
     })
 
     const recurrenceMap = new Map(recurrenceData.map(r => [r.email, r]))

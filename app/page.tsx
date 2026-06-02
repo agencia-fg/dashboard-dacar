@@ -291,6 +291,9 @@ export default function Dashboard() {
         {tab === 'vendas' && (
           <>
             {vendasError && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{vendasError}</div>}
+            <div className="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2.5 text-xs text-gray-400">
+              💡 Esta aba mostra <strong className="text-gray-300">todos os pedidos do período</strong>, independente de quando o cliente se cadastrou. A aba "Cadastros vs. Compras" mostra apenas clientes que se cadastraram no período selecionado.
+            </div>
             {vendasLoading && <div className="text-center py-20 text-gray-400 text-sm">Buscando pedidos e analisando recorrência... pode levar alguns segundos.</div>}
 
             {vendas && (
