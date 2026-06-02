@@ -29,11 +29,13 @@ interface VendasSummary {
   totalOrders: number; totalRevenue: number; uniqueCustomers: number
   recurringCount: number; newCount: number
   recurringRevenue: number; newRevenue: number
+  avgDaysToPurchase: number | null
   isSample: boolean; sampleSize: number
 }
 interface VendasCustomer {
   email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number
-  totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
+  firstOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
+  registeredAt: string | null; daysToPurchase: number | null
 }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[] }
 
@@ -305,13 +307,16 @@ export default function Dashboard() {
                 )}
 
                 {/* KPIs */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                   <KpiCard icon={<ShoppingCart size={20} />} label="Total de Pedidos" value={vendas.summary.totalOrders} color="blue" />
                   <KpiCard icon={<DollarSign size={20} />} label="Receita Total" value={fmt(vendas.summary.totalRevenue)} color="yellow" />
                   <KpiCard icon={<Repeat2 size={20} />} label="Clientes Recorrentes" value={vendas.summary.recurringCount}
                     sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="purple" />
                   <KpiCard icon={<UserCheck size={20} />} label="Clientes Novos" value={vendas.summary.newCount}
                     sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="green" />
+                  <KpiCard icon={<TrendingUp size={20} />} label="Média: cadastro → compra"
+                    value={vendas.summary.avgDaysToPurchase !== null ? `${vendas.summary.avgDaysToPurchase} dias` : '—'}
+                    sub="apenas clientes novos" color="red" />
                 </div>
 
                 {/* Charts */}
@@ -401,9 +406,12 @@ export default function Dashboard() {
                           <th className="pb-2 pr-4">E-mail</th>
                           <th className="pb-2 pr-4">Telefone</th>
                           <th className="pb-2 pr-4">Tipo</th>
-                          <th className="pb-2 pr-4">Pedidos no período</th>
-                          <th className="pb-2 pr-4">Total histórico</th>
-                          <th className="pb-2">Gasto no período</th>
+                          <th className="pb-2 pr-4">Cadastro</th>
+                          <th className="pb-2 pr-4">1ª Compra</th>
+                          <th className="pb-2 pr-4">Dias cadastro→compra</th>
+                          <th className="pb-2 pr-4">Ped. período</th>
+                          <th className="pb-2 pr-4">Histórico</th>
+                          <th className="pb-2">Gasto</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
@@ -417,9 +425,18 @@ export default function Dashboard() {
                                 {c.isRecurring ? 'Recorrente' : 'Novo'}
                               </span>
                             </td>
+                            <td className="py-2 pr-4 text-gray-400 text-xs">{c.registeredAt ? fmtDate(c.registeredAt) : '—'}</td>
+                            <td className="py-2 pr-4 text-gray-400 text-xs">{c.firstOrderDate ? fmtDate(c.firstOrderDate) : '—'}</td>
+                            <td className="py-2 pr-4 text-center">
+                              {c.daysToPurchase !== null
+                                ? <span className={`text-xs font-medium ${c.daysToPurchase === 0 ? 'text-green-400' : c.daysToPurchase <= 7 ? 'text-yellow-400' : 'text-orange-400'}`}>
+                                    {c.daysToPurchase === 0 ? 'Mesmo dia' : `${c.daysToPurchase}d`}
+                                  </span>
+                                : <span className="text-gray-600 text-xs">—</span>}
+                            </td>
                             <td className="py-2 pr-4 text-center text-gray-300">{c.ordersInPeriod}</td>
-                            <td className="py-2 pr-4 text-center text-gray-300">
-                              <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
+                            <td className="py-2 pr-4 text-center">
+                              <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold text-xs' : 'text-gray-400 text-xs'}>{c.totalAllTime}</span>
                             </td>
                             <td className="py-2 text-gray-300">{fmt(c.totalSpent)}</td>
                           </tr>
