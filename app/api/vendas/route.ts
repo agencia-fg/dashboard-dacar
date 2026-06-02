@@ -79,9 +79,8 @@ async function fetchTotalOrdersByEmail(email: string): Promise<number> {
 
 async function fetchRegistrationDate(email: string): Promise<string | null> {
   const realEmail = extractRealEmail(email)
-  // MasterData v1: filtro direto por campo como query param (sem _where)
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&email=${encodeURIComponent(realEmail)}&_sort=createdIn%20ASC`
-  const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-0' } })
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&email=${encodeURIComponent(realEmail)}`
+  const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-1' } })
   if (!res.ok) return null
   const data = await res.json()
   return data?.[0]?.createdIn ?? null
