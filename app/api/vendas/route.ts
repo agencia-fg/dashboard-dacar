@@ -79,7 +79,8 @@ async function fetchTotalOrdersByEmail(email: string): Promise<number> {
 
 async function fetchRegistrationDate(email: string): Promise<string | null> {
   const realEmail = extractRealEmail(email)
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&_where=email=${encodeURIComponent(realEmail)}&_sort=createdIn ASC`
+  // MasterData requires quotes around string values in _where
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&_where=email%3D%22${encodeURIComponent(realEmail)}%22&_sort=createdIn%20ASC`
   const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-0' } })
   if (!res.ok) return null
   const data = await res.json()

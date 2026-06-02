@@ -44,6 +44,16 @@ const fmt = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
 const fmtDate = (iso: string) => format(new Date(iso), 'dd/MM/yyyy', { locale: ptBR })
 
+function fmtPhone(phone: string): string {
+  if (!phone) return '—'
+  const digits = phone.replace(/\D/g, '')
+  // Remove DDI 55 se presente
+  const local = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits
+  if (local.length === 11) return `(${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`
+  if (local.length === 10) return `(${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`
+  return phone
+}
+
 // ── Main Component ─────────────────────────────────────────────────
 export default function Dashboard() {
   const [tab, setTab] = useState<'cadastros' | 'vendas'>('cadastros')
@@ -267,7 +277,7 @@ export default function Dashboard() {
                       <tr key={c.id} className="hover:bg-gray-800/50 transition-colors">
                         <td className="py-2 pr-4 text-gray-200">{c.firstName} {c.lastName}</td>
                         <td className="py-2 pr-4 text-gray-400">{c.email}</td>
-                        <td className="py-2 pr-4 text-gray-400">{c.phone ?? '—'}</td>
+                        <td className="py-2 pr-4 text-gray-400">{fmtPhone(c.phone)}</td>
                         <td className="py-2 pr-4 text-gray-400">{c.createdIn ? fmtDate(c.createdIn) : '—'}</td>
                         <td className="py-2 pr-4">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.purchased ? 'bg-green-900/60 text-green-400' : 'bg-red-900/60 text-red-400'}`}>
@@ -363,20 +373,28 @@ export default function Dashboard() {
                   </div>
 
                   {/* Receita por tipo */}
-                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                    <h2 className="text-sm font-semibold text-gray-300 mb-4">Receita: Recorrentes vs. Novos</h2>
-                    <ResponsiveContainer width="100%" height={160}>
-                      <BarChart data={[{ name: 'Recorrentes', value: vendas.summary.recurringRevenue }, { name: 'Novos', value: vendas.summary.newRevenue }]}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#9ca3af' }} />
-                        <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-                        <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} formatter={(v) => fmt(Number(v))} />
-                        <Bar dataKey="value" name="Receita" radius={[6, 6, 0, 0]}>
-                          <Cell fill="#8b5cf6" />
-                          <Cell fill="#3b82f6" />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-4 justify-center">
+                    <h2 className="text-sm font-semibold text-gray-300">Receita por tipo</h2>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-3 h-3 rounded-full bg-purple-500 inline-block" />
+                        <span className="text-xs text-gray-400">Recorrentes</span>
+                      </div>
+                      <p className="text-2xl font-bold text-white">{fmt(vendas.summary.recurringRevenue)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {vendas.summary.totalRevenue > 0 ? `${((vendas.summary.recurringRevenue / vendas.summary.totalRevenue) * 100).toFixed(1)}% da receita total` : ''}
+                      </p>
+                    </div>
+                    <div className="border-t border-gray-800 pt-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
+                        <span className="text-xs text-gray-400">Novos</span>
+                      </div>
+                      <p className="text-2xl font-bold text-white">{fmt(vendas.summary.newRevenue)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {vendas.summary.totalRevenue > 0 ? `${((vendas.summary.newRevenue / vendas.summary.totalRevenue) * 100).toFixed(1)}% da receita total` : ''}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -419,7 +437,7 @@ export default function Dashboard() {
                           <tr key={c.email} className="hover:bg-gray-800/50 transition-colors">
                             <td className="py-2 pr-4 text-gray-200">{c.name}</td>
                             <td className="py-2 pr-4 text-gray-400">{c.email}</td>
-                            <td className="py-2 pr-4 text-gray-400">{c.phone || '—'}</td>
+                            <td className="py-2 pr-4 text-gray-400">{fmtPhone(c.phone)}</td>
                             <td className="py-2 pr-4">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isRecurring ? 'bg-purple-900/60 text-purple-400' : 'bg-blue-900/60 text-blue-400'}`}>
                                 {c.isRecurring ? 'Recorrente' : 'Novo'}
