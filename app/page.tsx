@@ -417,46 +417,46 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="text-xs" style={{ minWidth: '1100px', width: '100%' }}>
                       <thead>
-                        <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
-                          <th className="pb-2 pr-4">Nome</th>
-                          <th className="pb-2 pr-4">E-mail</th>
-                          <th className="pb-2 pr-4">Telefone</th>
-                          <th className="pb-2 pr-4">Tipo</th>
-                          <th className="pb-2 pr-4">Cadastro</th>
-                          <th className="pb-2 pr-4">1ª Compra</th>
-                          <th className="pb-2 pr-4">Última Compra</th>
-                          <th className="pb-2 pr-4">Dias cadastro→compra</th>
-                          <th className="pb-2 pr-4">Ped. período</th>
-                          <th className="pb-2 pr-4">Histórico</th>
+                        <tr className="border-b border-gray-800 text-left text-gray-500 uppercase whitespace-nowrap">
+                          <th className="pb-2 pr-3">Nome</th>
+                          <th className="pb-2 pr-3">E-mail</th>
+                          <th className="pb-2 pr-3">Telefone</th>
+                          <th className="pb-2 pr-3">Tipo</th>
+                          <th className="pb-2 pr-3">Cadastro</th>
+                          <th className="pb-2 pr-3">1ª Compra</th>
+                          <th className="pb-2 pr-3">Última Compra</th>
+                          <th className="pb-2 pr-3">Dias cad.→compra</th>
+                          <th className="pb-2 pr-3">Ped.</th>
+                          <th className="pb-2 pr-3">Hist.</th>
                           <th className="pb-2">Gasto</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
                         {filteredVendas.slice(0, 200).map((c) => (
-                          <tr key={c.email} className="hover:bg-gray-800/50 transition-colors">
-                            <td className="py-2 pr-4 text-gray-200">{c.name}</td>
-                            <td className="py-2 pr-4 text-gray-400">{c.email}</td>
-                            <td className="py-2 pr-4 text-gray-400">{fmtPhone(c.phone)}</td>
-                            <td className="py-2 pr-4">
+                          <tr key={c.email} className="hover:bg-gray-800/50 transition-colors whitespace-nowrap">
+                            <td className="py-2 pr-3 text-gray-200">{c.name}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.email}</td>
+                            <td className="py-2 pr-3 text-gray-400">{fmtPhone(c.phone)}</td>
+                            <td className="py-2 pr-3">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isRecurring ? 'bg-purple-900/60 text-purple-400' : 'bg-blue-900/60 text-blue-400'}`}>
                                 {c.isRecurring ? 'Recorrente' : 'Novo'}
                               </span>
                             </td>
-                            <td className="py-2 pr-4 text-gray-400 text-xs">{c.registeredAt ? fmtDate(c.registeredAt) : '—'}</td>
-                            <td className="py-2 pr-4 text-gray-400 text-xs">{c.firstOrderDate ? fmtDate(c.firstOrderDate) : '—'}</td>
-                            <td className="py-2 pr-4 text-gray-400 text-xs">{c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}</td>
-                            <td className="py-2 pr-4 text-center">
+                            <td className="py-2 pr-3 text-gray-400">{c.registeredAt ? fmtDate(c.registeredAt) : '—'}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.firstOrderDate ? fmtDate(c.firstOrderDate) : '—'}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}</td>
+                            <td className="py-2 pr-3 text-center">
                               {c.daysToPurchase !== null
-                                ? <span className={`text-xs font-medium ${c.daysToPurchase === 0 ? 'text-green-400' : c.daysToPurchase <= 7 ? 'text-yellow-400' : 'text-orange-400'}`}>
+                                ? <span className={`font-medium ${c.daysToPurchase === 0 ? 'text-green-400' : c.daysToPurchase <= 7 ? 'text-yellow-400' : 'text-orange-400'}`}>
                                     {c.daysToPurchase === 0 ? 'Mesmo dia' : `${c.daysToPurchase}d`}
                                   </span>
-                                : <span className="text-gray-600 text-xs">—</span>}
+                                : <span className="text-gray-600">—</span>}
                             </td>
-                            <td className="py-2 pr-4 text-center text-gray-300">{c.ordersInPeriod}</td>
-                            <td className="py-2 pr-4 text-center">
-                              <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold text-xs' : 'text-gray-400 text-xs'}>{c.totalAllTime}</span>
+                            <td className="py-2 pr-3 text-center text-gray-300">{c.ordersInPeriod}</td>
+                            <td className="py-2 pr-3 text-center">
+                              <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
                             </td>
                             <td className="py-2 text-gray-300">{fmt(c.totalSpent)}</td>
                           </tr>
