@@ -79,43 +79,35 @@ export async function fetchAllCustomers(
   return [...first.customers, ...remaining.flat()]
 }
 
-export async function fetchOrdersInPeriod(
-  dateFrom: string,
-  dateTo: string,
-  page = 1
-): Promise<{ orders: VtexOrder[]; total: number }> {
-  // VTEX Orders API: correct date range format
-  const from = encodeURIComponent(`${dateFrom}T00:00:00.000Z`)
-  const to = encodeURIComponent(`${dateTo}T23:59:59.999Z`)
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?f_creationDate=creationDate%3A[${from}+TO+${to}]&page=${page}&per_page=100`
-
+// Busca pedidos de um email específico (search por q=email)
+export async function fetchOrdersByEmail(email: string): Promise<VtexOrder[]> {
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(email)}&per_page=100&page=1`
   const res = await fetch(url, { headers, next: { revalidate: 300 } })
-  if (!res.ok) {
-    console.error('Orders API error:', res.status, await res.text())
-    return { orders: [], total: 0 }
-  }
-
+  if (!res.ok) return []
   const data = await res.json()
-  return {
-    orders: (data.list ?? []) as VtexOrder[],
-    total: data.paging?.total ?? 0,
-  }
+  return (data.list ?? []) as VtexOrder[]
 }
 
-export async function fetchAllOrdersInPeriod(
-  dateFrom: string,
-  dateTo: string
-): Promise<VtexOrder[]> {
-  const first = await fetchOrdersInPeriod(dateFrom, dateTo, 1)
-  const pages = Math.ceil(first.total / 100)
+// Busca pedidos para uma lista de clientes em lotes paralelos
+export async function fetchOrdersForCustomers(
+  customers: VtexCustomer[],
+  batchSize = 10
+): Promise<Map<string, VtexOrder[]>> {
+  const result = new Map<string, VtexOrder[]>()
 
-  if (pages <= 1) return first.orders
-
-  const remaining = await Promise.all(
-    Array.from({ length: pages - 1 }, (_, i) =>
-      fetchOrdersInPeriod(dateFrom, dateTo, i + 2).then((r) => r.orders)
+  for (let i = 0; i < customers.length; i += batchSize) {
+    const batch = customers.slice(i, i + batchSize)
+    const results = await Promise.all(
+      batch.map(async (c) => {
+        if (!c.email) return { email: '', orders: [] }
+        const orders = await fetchOrdersByEmail(c.email)
+        return { email: c.email.toLowerCase(), orders }
+      })
     )
-  )
+    for (const { email, orders } of results) {
+      if (email) result.set(email, orders)
+    }
+  }
 
-  return [...first.orders, ...remaining.flat()]
+  return result
 }
