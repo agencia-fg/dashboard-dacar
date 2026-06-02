@@ -79,25 +79,43 @@ export async function fetchAllCustomers(
   return [...first.customers, ...remaining.flat()]
 }
 
-export async function fetchOrdersByEmail(email: string): Promise<VtexOrder[]> {
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(email)}&f_status=invoiced,payment-approved,handling,ready-for-handling,waiting-for-fulfillment,shipped,delivered&per_page=50`
+export async function fetchOrdersInPeriod(
+  dateFrom: string,
+  dateTo: string,
+  page = 1
+): Promise<{ orders: VtexOrder[]; total: number }> {
+  // VTEX Orders API: correct date range format
+  const from = encodeURIComponent(`${dateFrom}T00:00:00.000Z`)
+  const to = encodeURIComponent(`${dateTo}T23:59:59.999Z`)
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?f_creationDate=creationDate%3A[${from}+TO+${to}]&page=${page}&per_page=100`
 
   const res = await fetch(url, { headers, next: { revalidate: 300 } })
-  if (!res.ok) return []
+  if (!res.ok) {
+    console.error('Orders API error:', res.status, await res.text())
+    return { orders: [], total: 0 }
+  }
 
   const data = await res.json()
-  return (data.list ?? []) as VtexOrder[]
+  return {
+    orders: (data.list ?? []) as VtexOrder[],
+    total: data.paging?.total ?? 0,
+  }
 }
 
-export async function fetchOrdersInPeriod(
+export async function fetchAllOrdersInPeriod(
   dateFrom: string,
   dateTo: string
 ): Promise<VtexOrder[]> {
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?f_creationDate=creationDate%3A%5B${dateFrom}T00%3A00%3A00.000Z%20TO%20${dateTo}T23%3A59%3A59.999Z%5D&per_page=100&f_status=invoiced,payment-approved,handling,ready-for-handling,waiting-for-fulfillment,shipped,delivered`
+  const first = await fetchOrdersInPeriod(dateFrom, dateTo, 1)
+  const pages = Math.ceil(first.total / 100)
 
-  const res = await fetch(url, { headers, next: { revalidate: 300 } })
-  if (!res.ok) return []
+  if (pages <= 1) return first.orders
 
-  const data = await res.json()
-  return (data.list ?? []) as VtexOrder[]
+  const remaining = await Promise.all(
+    Array.from({ length: pages - 1 }, (_, i) =>
+      fetchOrdersInPeriod(dateFrom, dateTo, i + 2).then((r) => r.orders)
+    )
+  )
+
+  return [...first.orders, ...remaining.flat()]
 }

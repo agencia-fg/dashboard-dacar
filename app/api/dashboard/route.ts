@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchAllCustomers, fetchOrdersInPeriod, VtexCustomer, VtexOrder } from '@/lib/vtex'
+import { fetchAllCustomers, fetchAllOrdersInPeriod, VtexCustomer, VtexOrder } from '@/lib/vtex'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,10 +8,13 @@ export async function GET(req: NextRequest) {
   const dateFrom = searchParams.get('from') ?? getDefaultFrom()
   const dateTo = searchParams.get('to') ?? getDefaultTo()
 
+  // Busca pedidos em janela ampla (1 ano) para capturar compras fora do período de cadastro
+  const ordersFrom = getOneYearBefore(dateFrom)
+
   try {
     const [customers, orders] = await Promise.all([
       fetchAllCustomers(dateFrom, dateTo),
-      fetchOrdersInPeriod(dateFrom, dateTo),
+      fetchAllOrdersInPeriod(ordersFrom, dateTo),
     ])
 
     const ordersByEmail = new Map<string, VtexOrder[]>()
@@ -86,6 +89,12 @@ function getDefaultFrom() {
 
 function getDefaultTo() {
   return new Date().toISOString().split('T')[0]
+}
+
+function getOneYearBefore(dateStr: string) {
+  const d = new Date(dateStr)
+  d.setFullYear(d.getFullYear() - 1)
+  return d.toISOString().split('T')[0]
 }
 
 function buildDailyMap(
