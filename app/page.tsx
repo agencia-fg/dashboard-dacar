@@ -34,7 +34,7 @@ interface VendasSummary {
 }
 interface VendasCustomer {
   email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number
-  firstOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
+  firstOrderDate: string; lastOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
   registeredAt: string | null; daysToPurchase: number | null
 }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[] }
@@ -426,6 +426,7 @@ export default function Dashboard() {
                           <th className="pb-2 pr-4">Tipo</th>
                           <th className="pb-2 pr-4">Cadastro</th>
                           <th className="pb-2 pr-4">1ª Compra</th>
+                          <th className="pb-2 pr-4">Última Compra</th>
                           <th className="pb-2 pr-4">Dias cadastro→compra</th>
                           <th className="pb-2 pr-4">Ped. período</th>
                           <th className="pb-2 pr-4">Histórico</th>
@@ -445,6 +446,7 @@ export default function Dashboard() {
                             </td>
                             <td className="py-2 pr-4 text-gray-400 text-xs">{c.registeredAt ? fmtDate(c.registeredAt) : '—'}</td>
                             <td className="py-2 pr-4 text-gray-400 text-xs">{c.firstOrderDate ? fmtDate(c.firstOrderDate) : '—'}</td>
+                            <td className="py-2 pr-4 text-gray-400 text-xs">{c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}</td>
                             <td className="py-2 pr-4 text-center">
                               {c.daysToPurchase !== null
                                 ? <span className={`text-xs font-medium ${c.daysToPurchase === 0 ? 'text-green-400' : c.daysToPurchase <= 7 ? 'text-yellow-400' : 'text-orange-400'}`}>

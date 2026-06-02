@@ -111,8 +111,8 @@ export async function GET(req: NextRequest) {
     const sampleOrders = orders.slice(0, 300)
     const details = await batchProcess(sampleOrders, 15, (o) => fetchOrderDetail(o.orderId))
 
-    // 3. Agrupa por email + primeira data de pedido no período
-    const byEmail = new Map<string, { name: string; phone: string; orderCount: number; totalSpent: number; firstOrderDate: string }>()
+    // 3. Agrupa por email + primeira e última data de pedido no período
+    const byEmail = new Map<string, { name: string; phone: string; orderCount: number; totalSpent: number; firstOrderDate: string; lastOrderDate: string }>()
     for (const detail of details) {
       if (!detail?.clientProfileData?.email) continue
       const rawEmail = detail.clientProfileData.email.toLowerCase()
@@ -121,11 +121,12 @@ export async function GET(req: NextRequest) {
       const phone = detail.clientProfileData.phone ?? ''
       const orderDate = detail.creationDate ?? ''
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, firstOrderDate: orderDate })
+        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate })
       }
       const entry = byEmail.get(email)!
       if (!entry.phone && phone) entry.phone = phone
       if (orderDate && orderDate < entry.firstOrderDate) entry.firstOrderDate = orderDate
+      if (orderDate && orderDate > entry.lastOrderDate) entry.lastOrderDate = orderDate
       entry.orderCount++
       entry.totalSpent += (detail.value ?? 0) / 100
     }
@@ -142,9 +143,9 @@ export async function GET(req: NextRequest) {
       const ordersBeforePeriod = Math.max(0, totalAllTime - ordersInPeriod)
       const firstOrderDate = byEmail.get(email)?.firstOrderDate ?? null
 
-      // Dias entre cadastro e primeira compra (apenas para clientes novos)
+      // Dias entre cadastro e primeira compra (para todos os clientes)
       let daysToPurchase: number | null = null
-      if (registeredAt && firstOrderDate && ordersBeforePeriod === 0) {
+      if (registeredAt && firstOrderDate) {
         const diff = new Date(firstOrderDate).getTime() - new Date(registeredAt).getTime()
         daysToPurchase = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)))
       }
@@ -165,6 +166,7 @@ export async function GET(req: NextRequest) {
         ordersInPeriod: info.orderCount,
         totalSpent: info.totalSpent,
         firstOrderDate: info.firstOrderDate,
+        lastOrderDate: info.lastOrderDate,
         totalAllTime: enrich?.totalAllTime ?? info.orderCount,
         isRecurring: enrich?.isRecurring ?? false,
         ordersBeforePeriod: enrich?.ordersBeforePeriod ?? 0,
