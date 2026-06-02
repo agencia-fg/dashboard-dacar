@@ -81,16 +81,19 @@ function extractRealEmail(email: string): string {
   return withoutSuffix.substring(0, lastDash)
 }
 
-async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; firstOrderDate: string | null }> {
+async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; firstOrderDate: string | null; lastOrderDateAllTime: string | null }> {
   const realEmail = extractRealEmail(email)
-  const [totalRes, firstRes] = await Promise.all([
+  const [latestRes, firstRes] = await Promise.all([
+    // ordenação padrão é desc — primeiro resultado é o mais recente
     fetch(`https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(realEmail)}&per_page=1&page=1`, { headers }),
     fetch(`https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(realEmail)}&per_page=1&page=1&orderBy=creationDate,asc`, { headers }),
   ])
-  const total = totalRes.ok ? ((await totalRes.json()).paging?.total ?? 0) : 0
+  const latestData = latestRes.ok ? await latestRes.json() : null
+  const total = latestData?.paging?.total ?? 0
+  const lastOrderDateAllTime = latestData?.list?.[0]?.creationDate ?? null
   const firstData = firstRes.ok ? await firstRes.json() : null
   const firstOrderDate = firstData?.list?.[0]?.creationDate ?? null
-  return { total, firstOrderDate }
+  return { total, firstOrderDate, lastOrderDateAllTime }
 }
 
 async function fetchRegistrationDate(email: string): Promise<string | null> {
@@ -171,7 +174,7 @@ export async function GET(req: NextRequest) {
         fetchTotalOrdersByEmail(email),
         fetchRegistrationDate(email),
       ])
-      const { total: totalAllTime, firstOrderDate: firstOrderDateAllTime } = orderInfo
+      const { total: totalAllTime, firstOrderDate: firstOrderDateAllTime, lastOrderDateAllTime } = orderInfo
       const ordersInPeriod = byEmail.get(email)?.orderCount ?? 0
       const ordersBeforePeriod = Math.max(0, totalAllTime - ordersInPeriod)
 
@@ -181,7 +184,14 @@ export async function GET(req: NextRequest) {
         daysToPurchase = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)))
       }
 
-      return { email, totalAllTime, isRecurring: ordersBeforePeriod > 0, ordersBeforePeriod, registeredAt, daysToPurchase, firstOrderDateAllTime }
+      // Frequência média: (última - primeira) / (total - 1)
+      let avgDaysBetweenOrders: number | null = null
+      if (totalAllTime >= 2 && firstOrderDateAllTime && lastOrderDateAllTime) {
+        const span = new Date(lastOrderDateAllTime).getTime() - new Date(firstOrderDateAllTime).getTime()
+        avgDaysBetweenOrders = Math.max(1, Math.round(span / (1000 * 60 * 60 * 24) / (totalAllTime - 1)))
+      }
+
+      return { email, totalAllTime, isRecurring: ordersBeforePeriod > 0, ordersBeforePeriod, registeredAt, daysToPurchase, firstOrderDateAllTime, avgDaysBetweenOrders }
     })
 
     const enrichMap = new Map(enrichData.map(r => [r.email, r]))
@@ -205,6 +215,7 @@ export async function GET(req: NextRequest) {
         ordersBeforePeriod: enrich?.ordersBeforePeriod ?? 0,
         registeredAt: enrich?.registeredAt ?? null,
         daysToPurchase: enrich?.daysToPurchase ?? null,
+        avgDaysBetweenOrders: enrich?.avgDaysBetweenOrders ?? null,
         utmSource: utm?.utmSource ?? null,
         utmMedium: utm?.utmMedium ?? null,
         utmCampaign: utm?.utmCampaign ?? null,

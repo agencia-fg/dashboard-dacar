@@ -35,7 +35,7 @@ interface VendasSummary {
 interface VendasCustomer {
   email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number; paidSpent: number
   firstOrderDate: string; lastOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
-  registeredAt: string | null; daysToPurchase: number | null
+  registeredAt: string | null; daysToPurchase: number | null; avgDaysBetweenOrders: number | null
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null
 }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[] }
@@ -456,6 +456,7 @@ export default function Dashboard() {
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('daysToPurchase')}>→Compra<SortIcon k="daysToPurchase" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('ordersInPeriod')}>Ped.<SortIcon k="ordersInPeriod" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalAllTime')}>Hist.<SortIcon k="totalAllTime" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('avgDaysBetweenOrders')}>Freq. média<SortIcon k="avgDaysBetweenOrders" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalSpent')}>Captado<SortIcon k="totalSpent" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('paidSpent')}>Pago<SortIcon k="paidSpent" /></th>
                           <th className="pb-2 pr-3">UTM Source</th>
@@ -487,6 +488,13 @@ export default function Dashboard() {
                             <td className="py-2 pr-3 text-center text-gray-300">{c.ordersInPeriod}</td>
                             <td className="py-2 pr-3 text-center">
                               <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
+                            </td>
+                            <td className="py-2 pr-3 text-center">
+                              {c.avgDaysBetweenOrders !== null
+                                ? <span className={`font-medium ${c.avgDaysBetweenOrders <= 30 ? 'text-green-400' : c.avgDaysBetweenOrders <= 90 ? 'text-yellow-400' : 'text-gray-400'}`}>
+                                    a cada {c.avgDaysBetweenOrders}d
+                                  </span>
+                                : <span className="text-gray-600">—</span>}
                             </td>
                             <td className="py-2 pr-3 text-gray-300">{fmt(c.totalSpent)}</td>
                             <td className="py-2 pr-3 text-gray-300">{c.paidSpent > 0 ? fmt(c.paidSpent) : '—'}</td>
