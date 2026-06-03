@@ -7,11 +7,13 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, FunnelChart, Funnel, LabelList, PieChart, Pie, Cell,
 } from 'recharts'
-import { Users, ShoppingCart, TrendingUp, DollarSign, RefreshCw, Search, Repeat2, UserCheck } from 'lucide-react'
+import { Users, ShoppingCart, TrendingUp, DollarSign, RefreshCw, Search, Repeat2, UserCheck, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface Summary {
   totalCustomers: number
+  approvedCount: number
   purchasedCount: number
   neverPurchasedCount: number
   conversionRate: number
@@ -27,7 +29,7 @@ interface DashboardData { summary: Summary; byDay: DayData[]; customers: Custome
 
 interface VendasSummary {
   totalOrders: number; totalRevenueCaptada: number; totalRevenuePaga: number; uniqueCustomers: number
-  recurringCount: number; newCount: number
+  recurringCount: number; newCount: number; paidCustomersCount: number
   recurringRevenue: number; recurringPaidRevenue: number; newRevenue: number; newPaidRevenue: number
   avgDaysToPurchase: number | null
   isSample: boolean; sampleSize: number
@@ -37,8 +39,11 @@ interface VendasCustomer {
   firstOrderDate: string; lastOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
   registeredAt: string | null; daysToPurchase: number | null; avgDaysBetweenOrders: number | null
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null
+  cnpj: string | null; corporateName: string | null; tradeName: string | null
+  city: string | null; state: string | null; approved: boolean | null
 }
-interface VendasData { summary: VendasSummary; customers: VendasCustomer[] }
+interface RegionData { state: string; count: number; revenue: number }
+interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
 
 // ── Helpers ────────────────────────────────────────────────────────
 const fmt = (n: number) =>
@@ -56,8 +61,38 @@ function fmtPhone(phone: string): string {
 }
 
 // ── Main Component ─────────────────────────────────────────────────
+function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes') {
+  const rows = customers.map(c => ({
+    'Nome': c.name,
+    'E-mail': c.email,
+    'Telefone': fmtPhone(c.phone),
+    'CNPJ': c.cnpj ?? '',
+    'Razão Social': c.corporateName ?? '',
+    'Nome Fantasia': c.tradeName ?? '',
+    'Cidade': c.city ?? '',
+    'Estado': c.state ?? '',
+    'Tipo': c.isRecurring ? 'Recorrente' : 'Novo',
+    'Cadastro': c.registeredAt ? fmtDate(c.registeredAt) : '',
+    '1ª Compra': c.firstOrderDate ? fmtDate(c.firstOrderDate) : '',
+    'Última Compra': c.lastOrderDate ? fmtDate(c.lastOrderDate) : '',
+    'Dias Cad.→Compra': c.daysToPurchase ?? '',
+    'Freq. Média (dias)': c.avgDaysBetweenOrders ?? '',
+    'Ped. Período': c.ordersInPeriod,
+    'Total Histórico': c.totalAllTime,
+    'Captado (R$)': c.totalSpent,
+    'Pago (R$)': c.paidSpent,
+    'UTM Source': c.utmSource ?? '',
+    'UTM Medium': c.utmMedium ?? '',
+    'UTM Campaign': c.utmCampaign ?? '',
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Clientes')
+  XLSX.writeFile(wb, `${filename}.xlsx`)
+}
+
 export default function Dashboard() {
-  const [tab, setTab] = useState<'cadastros' | 'vendas'>('cadastros')
+  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes'>('cadastros')
   const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'))
 
@@ -103,9 +138,9 @@ export default function Dashboard() {
 
   useEffect(() => { loadCadastros() }, [loadCadastros])
 
-  const handleTabChange = (t: 'cadastros' | 'vendas') => {
+  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes') => {
     setTab(t)
-    if (t === 'vendas' && !vendas) loadVendas()
+    if ((t === 'vendas' || t === 'regioes') && !vendas) loadVendas()
   }
 
   const handleUpdate = () => {
@@ -165,10 +200,10 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-bold text-white">Dacar Tintas — Dashboard</h1>
           <div className="flex gap-1 mt-2">
-            {(['cadastros', 'vendas'] as const).map(t => (
+            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões']] as const).map(([t, label]) => (
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
-                {t === 'cadastros' ? 'Cadastros vs. Compras' : 'Vendas & Recorrência'}
+                {label}
               </button>
             ))}
           </div>
@@ -194,9 +229,10 @@ export default function Dashboard() {
           <>
             {error && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{error}</div>}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <KpiCard icon={<Users size={20} />} label="Total de Cadastros" value={data?.summary.totalCustomers ?? '—'} color="blue" />
-              <KpiCard icon={<ShoppingCart size={20} />} label="Compraram" value={data?.summary.purchasedCount ?? '—'} sub={data ? `${data.summary.conversionRate}% de conversão` : undefined} color="green" />
+              <KpiCard icon={<UserCheck size={20} />} label="Cadastros Aprovados" value={data?.summary.approvedCount ?? '—'} sub={data?.summary.approvedCount != null ? `${((data.summary.approvedCount / data.summary.totalCustomers) * 100).toFixed(0)}% do total` : undefined} color="green" />
+              <KpiCard icon={<ShoppingCart size={20} />} label="Compraram" value={data?.summary.purchasedCount ?? '—'} sub={data ? `${data.summary.conversionRate}% de conversão` : undefined} color="purple" />
               <KpiCard icon={<TrendingUp size={20} />} label="Não compraram" value={data?.summary.neverPurchasedCount ?? '—'} sub={data ? `${(100 - data.summary.conversionRate).toFixed(1)}% do total` : undefined} color="red" />
               <KpiCard icon={<DollarSign size={20} />} label="Receita no Período" value={data ? fmt(data.summary.totalRevenue) : '—'} color="yellow" />
             </div>
@@ -318,6 +354,66 @@ export default function Dashboard() {
           </>
         )}
 
+        {/* ── TAB: REGIÕES ── */}
+        {tab === 'regioes' && (
+          <>
+            {vendasLoading && <div className="text-center py-20 text-gray-400 text-sm">Carregando dados...</div>}
+            {vendas && (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <KpiCard icon={<Users size={20} />} label="Estados com clientes" value={vendas.regionData.length} color="blue" />
+                  <KpiCard icon={<ShoppingCart size={20} />} label="Clientes c/ localização" value={vendas.regionData.filter(r => r.state !== 'Não informado').reduce((s, r) => s + r.count, 0)} color="green" />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Captada Total" value={fmt(vendas.summary.totalRevenueCaptada)} color="yellow" />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Paga Total" value={fmt(vendas.summary.totalRevenuePaga)} color="purple" />
+                </div>
+
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-sm font-semibold text-gray-300">Receita por Estado</h2>
+                    <button onClick={() => {
+                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({ Estado: r.state, Clientes: r.count, 'Receita (R$)': r.revenue.toFixed(2) })))
+                      const wb = XLSX.utils.book_new()
+                      XLSX.utils.book_append_sheet(wb, ws, 'Regiões')
+                      XLSX.writeFile(wb, 'dacar-regioes.xlsx')
+                    }} className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors">
+                      <Download size={13} /> Excel
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
+                          <th className="pb-2 pr-4">Estado</th>
+                          <th className="pb-2 pr-4">Clientes</th>
+                          <th className="pb-2 pr-4">Receita Captada</th>
+                          <th className="pb-2">% do Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-800">
+                        {vendas.regionData.map(r => (
+                          <tr key={r.state} className="hover:bg-gray-800/50">
+                            <td className="py-2 pr-4 text-gray-200 font-medium">{r.state}</td>
+                            <td className="py-2 pr-4 text-gray-300">{r.count}</td>
+                            <td className="py-2 pr-4 text-gray-300">{fmt(r.revenue)}</td>
+                            <td className="py-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-800 rounded-full h-1.5 max-w-24">
+                                  <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${((r.revenue / vendas.summary.totalRevenueCaptada) * 100).toFixed(0)}%` }} />
+                                </div>
+                                <span className="text-xs text-gray-400">{((r.revenue / vendas.summary.totalRevenueCaptada) * 100).toFixed(1)}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
         {/* ── TAB: VENDAS ── */}
         {tab === 'vendas' && (
           <>
@@ -344,6 +440,8 @@ export default function Dashboard() {
                     sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="purple" />
                   <KpiCard icon={<UserCheck size={20} />} label="Clientes Novos" value={vendas.summary.newCount}
                     sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.newCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="blue" />
+                  <KpiCard icon={<ShoppingCart size={20} />} label="Clientes que Pagaram" value={vendas.summary.paidCustomersCount}
+                    sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.paidCustomersCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="green" />
                   <KpiCard icon={<TrendingUp size={20} />} label="Média: cadastro → compra"
                     value={vendas.summary.avgDaysToPurchase !== null ? `${vendas.summary.avgDaysToPurchase} dias` : '—'}
                     sub="apenas clientes novos" color="red" />
@@ -429,6 +527,10 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                     <h2 className="text-sm font-semibold text-gray-300">Clientes que compraram ({filteredVendas.length})</h2>
                     <div className="flex items-center gap-2">
+                      <button onClick={() => exportToExcel(filteredVendas)}
+                        className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors">
+                        <Download size={13} /> Excel
+                      </button>
                       <div className="relative">
                         <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
                         <input placeholder="Buscar por nome ou e-mail" value={vendasSearch} onChange={(e) => setVendasSearch(e.target.value)}
@@ -449,6 +551,10 @@ export default function Dashboard() {
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('name')}>Nome<SortIcon k="name" /></th>
                           <th className="pb-2 pr-3">E-mail</th>
                           <th className="pb-2 pr-3">Telefone</th>
+                          <th className="pb-2 pr-3">CNPJ</th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('tradeName')}>Nome Fantasia<SortIcon k="tradeName" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('state')}>Estado<SortIcon k="state" /></th>
+                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('city')}>Cidade<SortIcon k="city" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('isRecurring')}>Tipo<SortIcon k="isRecurring" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('registeredAt')}>Cadastro<SortIcon k="registeredAt" /></th>
                           <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('firstOrderDate')}>1ª Compra<SortIcon k="firstOrderDate" /></th>
@@ -470,6 +576,10 @@ export default function Dashboard() {
                             <td className="py-2 pr-3 text-gray-200">{c.name}</td>
                             <td className="py-2 pr-3 text-gray-400">{c.email}</td>
                             <td className="py-2 pr-3 text-gray-400">{fmtPhone(c.phone)}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.cnpj || '—'}</td>
+                            <td className="py-2 pr-3 text-gray-300">{c.tradeName || c.corporateName || '—'}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.state || '—'}</td>
+                            <td className="py-2 pr-3 text-gray-400">{c.city || '—'}</td>
                             <td className="py-2 pr-3">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isRecurring ? 'bg-purple-900/60 text-purple-400' : 'bg-blue-900/60 text-blue-400'}`}>
                                 {c.isRecurring ? 'Recorrente' : 'Novo'}

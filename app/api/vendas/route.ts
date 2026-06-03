@@ -29,12 +29,7 @@ interface OrderListItem {
 }
 
 interface MarketingData {
-  utmSource?: string
-  utmMedium?: string
-  utmCampaign?: string
-  utmipage?: string
-  utmiPart?: string
-  utmiCampaign?: string
+  utmSource?: string; utmMedium?: string; utmCampaign?: string
 }
 
 interface OrderDetail {
@@ -44,6 +39,17 @@ interface OrderDetail {
   creationDate: string
   status: string
   marketingData?: MarketingData
+  shippingData?: { selectedAddresses?: Array<{ city?: string; state?: string }> }
+}
+
+interface CustomerProfile {
+  createdIn: string | null
+  corporateDocument: string | null
+  corporateName: string | null
+  tradeName: string | null
+  city: string | null
+  state: string | null
+  approved: boolean | null
 }
 
 async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): Promise<{ list: OrderListItem[]; total: number }> {
@@ -96,13 +102,23 @@ async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; 
   return { total, firstOrderDate, lastOrderDateAllTime }
 }
 
-async function fetchRegistrationDate(email: string): Promise<string | null> {
+async function fetchCustomerProfile(email: string): Promise<CustomerProfile> {
   const realEmail = extractRealEmail(email)
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=createdIn&email=${encodeURIComponent(realEmail)}`
+  const fields = 'createdIn,corporateDocument,corporateName,tradeName,city,state,approved'
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=${fields}&email=${encodeURIComponent(realEmail)}`
   const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-1' } })
-  if (!res.ok) return null
+  if (!res.ok) return { createdIn: null, corporateDocument: null, corporateName: null, tradeName: null, city: null, state: null, approved: null }
   const data = await res.json()
-  return data?.[0]?.createdIn ?? null
+  const r = data?.[0]
+  return {
+    createdIn: r?.createdIn ?? null,
+    corporateDocument: r?.corporateDocument ?? null,
+    corporateName: r?.corporateName ?? null,
+    tradeName: r?.tradeName ?? null,
+    city: r?.city ?? null,
+    state: r?.state ?? null,
+    approved: r?.approved ?? null,
+  }
 }
 
 async function batchProcess<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -139,6 +155,7 @@ export async function GET(req: NextRequest) {
       totalSpent: number; paidSpent: number
       firstOrderDate: string; lastOrderDate: string
       lastUtm: MarketingData | null
+      city: string | null; state: string | null
     }>()
 
     for (const detail of details) {
@@ -149,16 +166,19 @@ export async function GET(req: NextRequest) {
       const phone = detail.clientProfileData.phone ?? ''
       const orderDate = detail.creationDate ?? ''
       const isPaid = PAID_STATUSES.has(detail.status)
+      const city = detail.shippingData?.selectedAddresses?.[0]?.city ?? null
+      const state = detail.shippingData?.selectedAddresses?.[0]?.state ?? null
 
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null })
+        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state })
       }
       const entry = byEmail.get(email)!
       if (!entry.phone && phone) entry.phone = phone
+      if (!entry.city && city) entry.city = city
+      if (!entry.state && state) entry.state = state
       if (orderDate && orderDate < entry.firstOrderDate) entry.firstOrderDate = orderDate
       if (orderDate && orderDate > entry.lastOrderDate) {
         entry.lastOrderDate = orderDate
-        // UTM do pedido mais recente
         if (detail.marketingData) entry.lastUtm = detail.marketingData
       }
       entry.orderCount++
@@ -170,10 +190,11 @@ export async function GET(req: NextRequest) {
 
     // 4. Enriquece com histórico + cadastro
     const enrichData = await batchProcess(uniqueEmails, 8, async (email) => {
-      const [orderInfo, registeredAt] = await Promise.all([
+      const [orderInfo, profile] = await Promise.all([
         fetchTotalOrdersByEmail(email),
-        fetchRegistrationDate(email),
+        fetchCustomerProfile(email),
       ])
+      const registeredAt = profile.createdIn
       const { total: totalAllTime, firstOrderDate: firstOrderDateAllTime, lastOrderDateAllTime } = orderInfo
       const ordersInPeriod = byEmail.get(email)?.orderCount ?? 0
       const ordersBeforePeriod = Math.max(0, totalAllTime - ordersInPeriod)
@@ -191,7 +212,7 @@ export async function GET(req: NextRequest) {
         avgDaysBetweenOrders = Math.max(1, Math.round(span / (1000 * 60 * 60 * 24) / (totalAllTime - 1)))
       }
 
-      return { email, totalAllTime, isRecurring: ordersBeforePeriod > 0, ordersBeforePeriod, registeredAt, daysToPurchase, firstOrderDateAllTime, avgDaysBetweenOrders }
+      return { email, totalAllTime, isRecurring: ordersBeforePeriod > 0, ordersBeforePeriod, registeredAt, daysToPurchase, firstOrderDateAllTime, avgDaysBetweenOrders, profile }
     })
 
     const enrichMap = new Map(enrichData.map(r => [r.email, r]))
@@ -216,6 +237,12 @@ export async function GET(req: NextRequest) {
         registeredAt: enrich?.registeredAt ?? null,
         daysToPurchase: enrich?.daysToPurchase ?? null,
         avgDaysBetweenOrders: enrich?.avgDaysBetweenOrders ?? null,
+        cnpj: enrich?.profile?.corporateDocument ?? null,
+        corporateName: enrich?.profile?.corporateName ?? null,
+        tradeName: enrich?.profile?.tradeName ?? null,
+        city: info.city ?? enrich?.profile?.city ?? null,
+        state: info.state ?? enrich?.profile?.state ?? null,
+        approved: enrich?.profile?.approved ?? null,
         utmSource: utm?.utmSource ?? null,
         utmMedium: utm?.utmMedium ?? null,
         utmCampaign: utm?.utmCampaign ?? null,
@@ -224,6 +251,20 @@ export async function GET(req: NextRequest) {
 
     const recurringCustomers = customers.filter(c => c.isRecurring)
     const newCustomers = customers.filter(c => !c.isRecurring)
+    const paidCustomers = customers.filter(c => c.paidSpent > 0)
+
+    // Breakdown por estado
+    const byState = new Map<string, { count: number; revenue: number }>()
+    for (const c of customers) {
+      const s = c.state ?? 'Não informado'
+      if (!byState.has(s)) byState.set(s, { count: 0, revenue: 0 })
+      const e = byState.get(s)!
+      e.count++
+      e.revenue += c.totalSpent
+    }
+    const regionData = Array.from(byState.entries())
+      .map(([state, v]) => ({ state, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
     const newWithDays = newCustomers.filter(c => c.daysToPurchase !== null)
     const avgDaysToPurchase = newWithDays.length > 0
       ? Math.round(newWithDays.reduce((s, c) => s + (c.daysToPurchase ?? 0), 0) / newWithDays.length)
@@ -242,10 +283,12 @@ export async function GET(req: NextRequest) {
         newRevenue: newCustomers.reduce((s, c) => s + c.totalSpent, 0),
         newPaidRevenue: newCustomers.reduce((s, c) => s + c.paidSpent, 0),
         avgDaysToPurchase,
+        paidCustomersCount: paidCustomers.length,
         isSample: orders.length > 300,
         sampleSize: sampleOrders.length,
       },
       customers,
+      regionData,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'

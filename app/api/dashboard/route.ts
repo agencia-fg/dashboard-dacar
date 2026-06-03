@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     const totalCustomers = enriched.length
     const purchasedCustomers = enriched.filter((c) => c.purchased)
     const neverPurchased = enriched.filter((c) => !c.purchased)
+    const approvedCustomers = customers.filter((c) => c.approved === true)
     const conversionRate =
       totalCustomers > 0 ? (purchasedCustomers.length / totalCustomers) * 100 : 0
 
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       summary: {
         totalCustomers,
+        approvedCount: approvedCustomers.length,
         purchasedCount: purchasedCustomers.length,
         neverPurchasedCount: neverPurchased.length,
         conversionRate: parseFloat(conversionRate.toFixed(1)),

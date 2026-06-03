@@ -16,6 +16,7 @@ export interface VtexCustomer {
   phone: string
   createdIn: string
   userId: string
+  approved?: boolean
 }
 
 export interface VtexOrder {
@@ -42,7 +43,7 @@ export async function fetchCustomers(
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=id,email,firstName,lastName,phone,createdIn,userId&_where=createdIn%20between%20${dateFrom}T00%3A00%3A00.000Z%20AND%20${dateTo}T23%3A59%3A59.999Z&_sort=createdIn%20DESC`
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=id,email,firstName,lastName,phone,createdIn,userId,approved&_where=createdIn%20between%20${dateFrom}T00%3A00%3A00.000Z%20AND%20${dateTo}T23%3A59%3A59.999Z&_sort=createdIn%20DESC`
 
   const res = await fetch(url, {
     headers: {
