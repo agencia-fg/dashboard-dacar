@@ -27,6 +27,14 @@ interface Customer {
 }
 interface DashboardData { summary: Summary; byDay: DayData[]; customers: Customer[] }
 
+interface FunnelStep {
+  step: string; label: string; count: number; description: string; color: string; pct?: number
+}
+interface FunnelData {
+  funnel: FunnelStep[]; paidRevenue: number; totalOrders: number
+  conversionRate: number; statusBreakdown: Record<string, number>
+}
+
 interface VendasSummary {
   totalOrders: number; totalRevenueCaptada: number; totalRevenuePaga: number; uniqueCustomers: number
   recurringCount: number; newCount: number; paidCustomersCount: number
@@ -107,6 +115,10 @@ export default function Dashboard() {
   const [vendas, setVendas] = useState<VendasData | null>(null)
   const [vendasLoading, setVendasLoading] = useState(false)
   const [vendasError, setVendasError] = useState('')
+
+  // Funil
+  const [funnelData, setFunnelData] = useState<FunnelData | null>(null)
+  const [funnelLoading, setFunnelLoading] = useState(false)
   const [vendasSearch, setVendasSearch] = useState('')
   const [vendasFilter, setVendasFilter] = useState<'all' | 'recurring' | 'new'>('all')
   const [sortKey, setSortKey] = useState<keyof VendasCustomer>('totalSpent')
@@ -115,11 +127,18 @@ export default function Dashboard() {
   const loadCadastros = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/dashboard?from=${dateFrom}&to=${dateTo}`)
-      if (!res.ok) throw new Error(`Erro ${res.status}`)
-      const json = await res.json()
+      const [dashRes, funnelRes] = await Promise.all([
+        fetch(`/api/dashboard?from=${dateFrom}&to=${dateTo}`),
+        fetch(`/api/funnel?from=${dateFrom}&to=${dateTo}`),
+      ])
+      if (!dashRes.ok) throw new Error(`Erro ${dashRes.status}`)
+      const json = await dashRes.json()
       if (json.error) throw new Error(json.error)
       setData(json)
+      if (funnelRes.ok) {
+        const fj = await funnelRes.json()
+        if (!fj.error) setFunnelData(fj)
+      }
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Erro') }
     finally { setLoading(false) }
   }, [dateFrom, dateTo])
@@ -177,7 +196,7 @@ export default function Dashboard() {
     <span className="ml-1 opacity-50">{sortKey === k ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
   )
 
-  const funnelData = data
+  const miniPieData = data
     ? [
         { name: 'Cadastros', value: data.summary.totalCustomers, fill: '#3b82f6' },
         { name: 'Compraram', value: data.summary.purchasedCount, fill: '#10b981' },
@@ -237,6 +256,52 @@ export default function Dashboard() {
               <KpiCard icon={<DollarSign size={20} />} label="Receita no Período" value={data ? fmt(data.summary.totalRevenue) : '—'} color="yellow" />
             </div>
 
+            {/* Funil de etapas */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-gray-300 mb-6">Funil de Conversão — Jornada do Cliente</h2>
+              {funnelData ? (
+                <div className="flex flex-col gap-2">
+                  {funnelData.funnel.map((step, i) => {
+                    const maxCount = funnelData.funnel[0].count
+                    const barWidth = maxCount > 0 ? (step.count / maxCount) * 100 : 0
+                    return (
+                      <div key={step.step}>
+                        <div className="flex items-center gap-4 mb-1">
+                          <span className="text-xs text-gray-500 w-24 text-right">{step.label}</span>
+                          <div className="flex-1 relative">
+                            <div className="h-10 rounded-lg flex items-center px-4 transition-all"
+                              style={{ width: `${Math.max(barWidth, 8)}%`, backgroundColor: step.color + '33', border: `1px solid ${step.color}55` }}>
+                              <span className="text-white font-bold text-sm whitespace-nowrap">{step.count.toLocaleString('pt-BR')}</span>
+                            </div>
+                          </div>
+                          <div className="w-32 text-right">
+                            {step.pct !== undefined && (
+                              <span className="text-xs font-semibold" style={{ color: step.color }}>
+                                {step.pct.toFixed(1)}% da etapa anterior
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {i < funnelData.funnel.length - 1 && (
+                          <div className="ml-24 pl-4 text-xs text-gray-600 mb-1">↓ {(funnelData.funnel[0].count > 0 ? ((funnelData.funnel[i + 1].count / funnelData.funnel[0].count) * 100) : 0).toFixed(1)}% do total de cadastros</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div className="mt-4 pt-4 border-t border-gray-800 flex gap-6 text-sm">
+                    <div><span className="text-gray-500">Conversão total: </span><span className="font-bold text-white">{funnelData.conversionRate}%</span></div>
+                    <div><span className="text-gray-500">Total de pedidos: </span><span className="font-bold text-white">{funnelData.totalOrders}</span></div>
+                    <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
+                  </div>
+                  <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-800/40 rounded-lg text-xs text-yellow-400/80">
+                    ⚠️ <strong>"Iniciaram checkout"</strong> e <strong>"Chegaram ao pagamento"</strong> incluem clientes que compraram em datas anteriores ao período (o pedido existe mas o cadastro é mais antigo). Para um funil preciso de Login e Carrinho, é necessário implementar eventos no GTM.
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500 text-sm">Carregando funil...</div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4">
                 <h2 className="text-sm font-semibold text-gray-300 mb-4">Cadastros × Compras por dia</h2>
@@ -261,13 +326,13 @@ export default function Dashboard() {
                     <ResponsiveContainer width="100%" height={180}>
                       <FunnelChart>
                         <Tooltip contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} />
-                        <Funnel dataKey="value" data={funnelData} isAnimationActive>
+                        <Funnel dataKey="value" data={miniPieData} isAnimationActive>
                           <LabelList position="center" fill="#fff" fontSize={13} />
                         </Funnel>
                       </FunnelChart>
                     </ResponsiveContainer>
                     <div className="mt-3 space-y-2">
-                      {funnelData.map((f) => (
+                      {miniPieData.map((f) => (
                         <div key={f.name} className="flex justify-between text-sm">
                           <span className="text-gray-400">{f.name}</span>
                           <span className="font-semibold" style={{ color: f.fill }}>{f.value}</span>
