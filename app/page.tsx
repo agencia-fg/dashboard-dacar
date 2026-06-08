@@ -50,7 +50,7 @@ interface VendasCustomer {
   cnpj: string | null; corporateName: string | null; tradeName: string | null
   city: string | null; state: string | null; approved: boolean | null
 }
-interface RegionData { state: string; count: number; revenue: number }
+interface RegionData { state: string; count: number; revenue: number; paidRevenue: number }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -436,7 +436,7 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold text-gray-300">Receita por Estado</h2>
                     <button onClick={() => {
-                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({ Estado: r.state, Clientes: r.count, 'Receita (R$)': r.revenue.toFixed(2) })))
+                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({ Estado: r.state, Clientes: r.count, 'Receita Captada (R$)': r.revenue.toFixed(2), 'Receita Paga (R$)': r.paidRevenue.toFixed(2), '% Pago/Captado': r.revenue > 0 ? ((r.paidRevenue / r.revenue) * 100).toFixed(1) + '%' : '—' })))
                       const wb = XLSX.utils.book_new()
                       XLSX.utils.book_append_sheet(wb, ws, 'Regiões')
                       XLSX.writeFile(wb, 'dacar-regioes.xlsx')
@@ -451,6 +451,8 @@ export default function Dashboard() {
                           <th className="pb-2 pr-4">Estado</th>
                           <th className="pb-2 pr-4">Clientes</th>
                           <th className="pb-2 pr-4">Receita Captada</th>
+                          <th className="pb-2 pr-4">Receita Paga</th>
+                          <th className="pb-2 pr-4">% Pago/Captado</th>
                           <th className="pb-2">% do Total</th>
                         </tr>
                       </thead>
@@ -460,6 +462,10 @@ export default function Dashboard() {
                             <td className="py-2 pr-4 text-gray-200 font-medium">{r.state}</td>
                             <td className="py-2 pr-4 text-gray-300">{r.count}</td>
                             <td className="py-2 pr-4 text-gray-300">{fmt(r.revenue)}</td>
+                            <td className="py-2 pr-4 text-green-400 font-medium">{fmt(r.paidRevenue)}</td>
+                            <td className="py-2 pr-4 text-gray-400 text-xs">
+                              {r.revenue > 0 ? `${((r.paidRevenue / r.revenue) * 100).toFixed(1)}%` : '—'}
+                            </td>
                             <td className="py-2">
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 bg-gray-800 rounded-full h-1.5 max-w-24">

@@ -254,13 +254,14 @@ export async function GET(req: NextRequest) {
     const paidCustomers = customers.filter(c => c.paidSpent > 0)
 
     // Breakdown por estado
-    const byState = new Map<string, { count: number; revenue: number }>()
+    const byState = new Map<string, { count: number; revenue: number; paidRevenue: number }>()
     for (const c of customers) {
       const s = c.state ?? 'Não informado'
-      if (!byState.has(s)) byState.set(s, { count: 0, revenue: 0 })
+      if (!byState.has(s)) byState.set(s, { count: 0, revenue: 0, paidRevenue: 0 })
       const e = byState.get(s)!
       e.count++
       e.revenue += c.totalSpent
+      e.paidRevenue += c.paidSpent
     }
     const regionData = Array.from(byState.entries())
       .map(([state, v]) => ({ state, ...v }))
