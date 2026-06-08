@@ -50,7 +50,7 @@ interface VendasCustomer {
   cnpj: string | null; corporateName: string | null; tradeName: string | null
   city: string | null; state: string | null; approved: boolean | null
 }
-interface RegionData { state: string; count: number; revenue: number; paidRevenue: number }
+interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -436,7 +436,7 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold text-gray-300">Receita por Estado</h2>
                     <button onClick={() => {
-                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({ Estado: r.state, Clientes: r.count, 'Receita Captada (R$)': r.revenue.toFixed(2), 'Receita Paga (R$)': r.paidRevenue.toFixed(2), '% Pago/Captado': r.revenue > 0 ? ((r.paidRevenue / r.revenue) * 100).toFixed(1) + '%' : '—' })))
+                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({ Estado: r.state, 'Total Clientes': r.count, Novos: r.newCount, Recorrentes: r.recurringCount, 'Receita Captada (R$)': r.revenue.toFixed(2), 'Receita Paga (R$)': r.paidRevenue.toFixed(2), '% Pago/Captado': r.revenue > 0 ? ((r.paidRevenue / r.revenue) * 100).toFixed(1) + '%' : '—' })))
                       const wb = XLSX.utils.book_new()
                       XLSX.utils.book_append_sheet(wb, ws, 'Regiões')
                       XLSX.writeFile(wb, 'dacar-regioes.xlsx')
@@ -449,7 +449,9 @@ export default function Dashboard() {
                       <thead>
                         <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
                           <th className="pb-2 pr-4">Estado</th>
-                          <th className="pb-2 pr-4">Clientes</th>
+                          <th className="pb-2 pr-4">Total Clientes</th>
+                          <th className="pb-2 pr-4">Novos</th>
+                          <th className="pb-2 pr-4">Recorrentes</th>
                           <th className="pb-2 pr-4">Receita Captada</th>
                           <th className="pb-2 pr-4">Receita Paga</th>
                           <th className="pb-2 pr-4">% Pago/Captado</th>
@@ -461,6 +463,14 @@ export default function Dashboard() {
                           <tr key={r.state} className="hover:bg-gray-800/50">
                             <td className="py-2 pr-4 text-gray-200 font-medium">{r.state}</td>
                             <td className="py-2 pr-4 text-gray-300">{r.count}</td>
+                            <td className="py-2 pr-4">
+                              <span className="text-blue-400 font-medium">{r.newCount}</span>
+                              <span className="text-gray-600 text-xs ml-1">({r.count > 0 ? ((r.newCount/r.count)*100).toFixed(0) : 0}%)</span>
+                            </td>
+                            <td className="py-2 pr-4">
+                              <span className="text-purple-400 font-medium">{r.recurringCount}</span>
+                              <span className="text-gray-600 text-xs ml-1">({r.count > 0 ? ((r.recurringCount/r.count)*100).toFixed(0) : 0}%)</span>
+                            </td>
                             <td className="py-2 pr-4 text-gray-300">{fmt(r.revenue)}</td>
                             <td className="py-2 pr-4 text-green-400 font-medium">{fmt(r.paidRevenue)}</td>
                             <td className="py-2 pr-4 text-gray-400 text-xs">
