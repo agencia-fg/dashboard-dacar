@@ -49,9 +49,14 @@ interface OrderDetail {
   items?: OrderItem[]
 }
 
-// Extrai litros e kg do nome do produto (ex: "Tinta 3,6 L Branco", "Borracha 20 Kg")
-function parseVolumeFromName(name: string): { liters: number; kg: number } {
-  let liters = 0, kg = 0
+// Fator de conversão Kg → Litros para produtos Dacar
+// Borracha líquida e tintas base água: densidade ≈ 1 kg/L (ajuste se necessário)
+const KG_TO_LITERS = 1.0
+
+// Extrai litros do nome do produto (ex: "Tinta 3,6 L Branco", "Borracha 20 Kg")
+// Kg é convertido para L usando KG_TO_LITERS
+function parseVolumeFromName(name: string): number {
+  let liters = 0
   const lMatches = [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(ml|ML|mL|l\b|L\b|lt\b|Lt\b|litros?)/g)]
   for (const m of lMatches) {
     const v = parseFloat(m[1].replace(',', '.'))
@@ -60,9 +65,9 @@ function parseVolumeFromName(name: string): { liters: number; kg: number } {
   }
   const kgMatches = [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|Kg|KG|kgs?)/g)]
   for (const m of kgMatches) {
-    kg += parseFloat(m[1].replace(',', '.'))
+    liters += parseFloat(m[1].replace(',', '.')) * KG_TO_LITERS
   }
-  return { liters, kg }
+  return liters
 }
 
 interface CustomerProfile {
@@ -179,7 +184,7 @@ export async function GET(req: NextRequest) {
       firstOrderDate: string; lastOrderDate: string
       lastUtm: MarketingData | null
       city: string | null; state: string | null
-      totalVolumeL: number; totalVolumeKg: number
+      paidVolumeL: number  // apenas pedidos pagos, Kg já convertido para L
     }>()
 
     for (const detail of details) {
@@ -193,16 +198,16 @@ export async function GET(req: NextRequest) {
       const city = detail.shippingData?.selectedAddresses?.[0]?.city ?? null
       const state = detail.shippingData?.selectedAddresses?.[0]?.state ?? null
 
-      // Soma volume dos itens deste pedido
-      let orderVolumeL = 0, orderVolumeKg = 0
-      for (const item of detail.items ?? []) {
-        const vol = parseVolumeFromName(item.name ?? '')
-        orderVolumeL += vol.liters * (item.quantity ?? 1)
-        orderVolumeKg += vol.kg * (item.quantity ?? 1)
+      // Soma volume apenas de pedidos PAGOS (Kg já convertido para L)
+      let orderVolumeL = 0
+      if (isPaid) {
+        for (const item of detail.items ?? []) {
+          orderVolumeL += parseVolumeFromName(item.name ?? '') * (item.quantity ?? 1)
+        }
       }
 
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state, totalVolumeL: 0, totalVolumeKg: 0 })
+        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state, paidVolumeL: 0 })
       }
       const entry = byEmail.get(email)!
       if (!entry.phone && phone) entry.phone = phone
@@ -216,8 +221,7 @@ export async function GET(req: NextRequest) {
       entry.orderCount++
       entry.totalSpent += (detail.value ?? 0) / 100
       if (isPaid) entry.paidSpent += (detail.value ?? 0) / 100
-      entry.totalVolumeL += orderVolumeL
-      entry.totalVolumeKg += orderVolumeKg
+      entry.paidVolumeL += orderVolumeL
     }
 
     const uniqueEmails = Array.from(byEmail.keys())
@@ -280,8 +284,7 @@ export async function GET(req: NextRequest) {
         utmSource: utm?.utmSource ?? null,
         utmMedium: utm?.utmMedium ?? null,
         utmCampaign: utm?.utmCampaign ?? null,
-        totalVolumeL: Math.round((info.totalVolumeL ?? 0) * 100) / 100,
-        totalVolumeKg: Math.round((info.totalVolumeKg ?? 0) * 100) / 100,
+        paidVolumeL: Math.round((info.paidVolumeL ?? 0) * 100) / 100,
       }
     }).sort((a, b) => b.totalSpent - a.totalSpent)
 
@@ -308,8 +311,9 @@ export async function GET(req: NextRequest) {
       ? Math.round(newWithDays.reduce((s, c) => s + (c.daysToPurchase ?? 0), 0) / newWithDays.length)
       : null
 
-    const totalVolumeL = customers.reduce((s, c) => s + c.totalVolumeL, 0)
-    const totalVolumeKg = customers.reduce((s, c) => s + c.totalVolumeKg, 0)
+    const totalPaidVolumeL   = Math.round(customers.reduce((s, c) => s + c.paidVolumeL, 0) * 100) / 100
+    const recurringPaidVolL  = Math.round(recurringCustomers.reduce((s, c) => s + c.paidVolumeL, 0) * 100) / 100
+    const newPaidVolL        = Math.round(newCustomers.reduce((s, c) => s + c.paidVolumeL, 0) * 100) / 100
 
     return NextResponse.json({
       summary: {
@@ -327,8 +331,9 @@ export async function GET(req: NextRequest) {
         paidCustomersCount: paidCustomers.length,
         isSample: orders.length > 300,
         sampleSize: sampleOrders.length,
-        totalVolumeL: Math.round(totalVolumeL * 100) / 100,
-        totalVolumeKg: Math.round(totalVolumeKg * 100) / 100,
+        totalPaidVolumeL,
+        recurringPaidVolumeL: recurringPaidVolL,
+        newPaidVolumeL: newPaidVolL,
       },
       customers,
       regionData,

@@ -41,7 +41,7 @@ interface VendasSummary {
   recurringRevenue: number; recurringPaidRevenue: number; newRevenue: number; newPaidRevenue: number
   avgDaysToPurchase: number | null
   isSample: boolean; sampleSize: number
-  totalVolumeL: number; totalVolumeKg: number
+  totalPaidVolumeL: number; recurringPaidVolumeL: number; newPaidVolumeL: number
 }
 interface VendasCustomer {
   email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number; paidSpent: number
@@ -50,7 +50,7 @@ interface VendasCustomer {
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null
   cnpj: string | null; corporateName: string | null; tradeName: string | null
   city: string | null; state: string | null; approved: boolean | null
-  totalVolumeL: number; totalVolumeKg: number
+  paidVolumeL: number
 }
 interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
@@ -75,8 +75,7 @@ const VENDAS_COLUMNS: ColDef[] = [
   { key: 'avgDaysBetweenOrders',label: 'Freq. média',   sortKey: 'avgDaysBetweenOrders' },
   { key: 'totalSpent',          label: 'Captado',       sortKey: 'totalSpent' },
   { key: 'paidSpent',           label: 'Pago',          sortKey: 'paidSpent' },
-  { key: 'totalVolumeL',        label: 'Volume (L)',    sortKey: 'totalVolumeL' },
-  { key: 'totalVolumeKg',       label: 'Peso (Kg)',     sortKey: 'totalVolumeKg' },
+  { key: 'paidVolumeL',         label: 'Volume Faturado (L)', sortKey: 'paidVolumeL' },
   { key: 'utmSource',           label: 'UTM Source',    sortKey: null },
   { key: 'utmMedium',           label: 'UTM Medium',    sortKey: null },
   { key: 'utmCampaign',         label: 'UTM Campaign',  sortKey: null },
@@ -118,8 +117,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
     'Total Histórico': c.totalAllTime,
     'Captado (R$)': c.totalSpent,
     'Pago (R$)': c.paidSpent,
-    'Volume (L)': c.totalVolumeL > 0 ? c.totalVolumeL : '',
-    'Peso (Kg)': c.totalVolumeKg > 0 ? c.totalVolumeKg : '',
+    'Volume Faturado (L)': (c.paidVolumeL ?? 0) > 0 ? c.paidVolumeL : '',
     'UTM Source': c.utmSource ?? '',
     'UTM Medium': c.utmMedium ?? '',
     'UTM Campaign': c.utmCampaign ?? '',
@@ -331,17 +329,10 @@ export default function Dashboard() {
       )
       case 'totalSpent': return <td key={col.key} className="py-2 pr-3 text-gray-300">{fmt(c.totalSpent)}</td>
       case 'paidSpent':  return <td key={col.key} className="py-2 pr-3 text-gray-300">{c.paidSpent > 0 ? fmt(c.paidSpent) : '—'}</td>
-      case 'totalVolumeL': return (
+      case 'paidVolumeL': return (
         <td key={col.key} className="py-2 pr-3 text-center">
-          {c.totalVolumeL > 0
-            ? <span className="font-medium text-cyan-400">{c.totalVolumeL.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} L</span>
-            : <span className="text-gray-600">—</span>}
-        </td>
-      )
-      case 'totalVolumeKg': return (
-        <td key={col.key} className="py-2 pr-3 text-center">
-          {c.totalVolumeKg > 0
-            ? <span className="font-medium text-orange-400">{c.totalVolumeKg.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} Kg</span>
+          {(c.paidVolumeL ?? 0) > 0
+            ? <span className="font-medium text-cyan-400">{c.paidVolumeL.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} L</span>
             : <span className="text-gray-600">—</span>}
         </td>
       )
@@ -666,15 +657,22 @@ export default function Dashboard() {
                   <KpiCard icon={<TrendingUp size={20} />} label="Média: cadastro → compra"
                     value={vendas.summary.avgDaysToPurchase !== null ? `${vendas.summary.avgDaysToPurchase} dias` : '—'}
                     sub="apenas clientes novos" color="red" />
-                  {vendas.summary.totalVolumeL > 0 && (
-                    <KpiCard icon={<ShoppingCart size={20} />} label="Volume Total (L)"
-                      value={`${vendas.summary.totalVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L`}
-                      sub="soma de todos os pedidos" color="blue" />
+                  {vendas.summary.totalPaidVolumeL > 0 && (
+                    <KpiCard icon={<ShoppingCart size={20} />} label="Volume Faturado Total"
+                      value={`${vendas.summary.totalPaidVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L`}
+                      sub="apenas pedidos pagos" color="blue" />
                   )}
-                  {vendas.summary.totalVolumeKg > 0 && (
-                    <KpiCard icon={<ShoppingCart size={20} />} label="Peso Total (Kg)"
-                      value={`${vendas.summary.totalVolumeKg.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} Kg`}
-                      sub="soma de todos os pedidos" color="yellow" />
+                  {vendas.summary.recurringPaidVolumeL > 0 && (
+                    <KpiCard icon={<Repeat2 size={20} />} label="Volume Recorrentes"
+                      value={`${vendas.summary.recurringPaidVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L`}
+                      sub={vendas.summary.totalPaidVolumeL > 0 ? `${((vendas.summary.recurringPaidVolumeL / vendas.summary.totalPaidVolumeL) * 100).toFixed(1)}% do total` : undefined}
+                      color="purple" />
+                  )}
+                  {vendas.summary.newPaidVolumeL > 0 && (
+                    <KpiCard icon={<UserCheck size={20} />} label="Volume Novos"
+                      value={`${vendas.summary.newPaidVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L`}
+                      sub={vendas.summary.totalPaidVolumeL > 0 ? `${((vendas.summary.newPaidVolumeL / vendas.summary.totalPaidVolumeL) * 100).toFixed(1)}% do total` : undefined}
+                      color="green" />
                   )}
                 </div>
 
