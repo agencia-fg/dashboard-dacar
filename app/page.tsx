@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { format, subDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, FunnelChart, Funnel, LabelList, PieChart, Pie, Cell,
 } from 'recharts'
-import { Users, ShoppingCart, TrendingUp, DollarSign, RefreshCw, Search, Repeat2, UserCheck, Download } from 'lucide-react'
+import { Users, ShoppingCart, TrendingUp, DollarSign, RefreshCw, Search, Repeat2, UserCheck, Download, SlidersHorizontal } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -53,6 +53,32 @@ interface VendasCustomer {
 interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
 
+// ── Column definitions ─────────────────────────────────────────────
+interface ColDef { key: string; label: string; sortKey: keyof VendasCustomer | null }
+const VENDAS_COLUMNS: ColDef[] = [
+  { key: 'name',                label: 'Nome',          sortKey: 'name' },
+  { key: 'email',               label: 'E-mail',        sortKey: null },
+  { key: 'phone',               label: 'Telefone',      sortKey: null },
+  { key: 'cnpj',                label: 'CNPJ',          sortKey: null },
+  { key: 'tradeName',           label: 'Nome Fantasia', sortKey: 'tradeName' },
+  { key: 'state',               label: 'Estado',        sortKey: 'state' },
+  { key: 'city',                label: 'Cidade',        sortKey: 'city' },
+  { key: 'isRecurring',         label: 'Tipo',          sortKey: 'isRecurring' },
+  { key: 'registeredAt',        label: 'Cadastro',      sortKey: 'registeredAt' },
+  { key: 'firstOrderDate',      label: '1ª Compra',     sortKey: 'firstOrderDate' },
+  { key: 'lastOrderDate',       label: 'Última Compra', sortKey: 'lastOrderDate' },
+  { key: 'daysToPurchase',      label: '→Compra',       sortKey: 'daysToPurchase' },
+  { key: 'ordersInPeriod',      label: 'Ped.',          sortKey: 'ordersInPeriod' },
+  { key: 'totalAllTime',        label: 'Hist.',         sortKey: 'totalAllTime' },
+  { key: 'avgDaysBetweenOrders',label: 'Freq. média',   sortKey: 'avgDaysBetweenOrders' },
+  { key: 'totalSpent',          label: 'Captado',       sortKey: 'totalSpent' },
+  { key: 'paidSpent',           label: 'Pago',          sortKey: 'paidSpent' },
+  { key: 'utmSource',           label: 'UTM Source',    sortKey: null },
+  { key: 'utmMedium',           label: 'UTM Medium',    sortKey: null },
+  { key: 'utmCampaign',         label: 'UTM Campaign',  sortKey: null },
+]
+const ALL_COL_KEYS = new Set(VENDAS_COLUMNS.map(c => c.key))
+
 // ── Helpers ────────────────────────────────────────────────────────
 const fmt = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
@@ -61,7 +87,6 @@ const fmtDate = (iso: string) => format(new Date(iso), 'dd/MM/yyyy', { locale: p
 function fmtPhone(phone: string): string {
   if (!phone) return '—'
   const digits = phone.replace(/\D/g, '')
-  // Remove DDI 55 se presente
   const local = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits
   if (local.length === 11) return `(${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`
   if (local.length === 10) return `(${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`
@@ -121,8 +146,34 @@ export default function Dashboard() {
   const [funnelLoading, setFunnelLoading] = useState(false)
   const [vendasSearch, setVendasSearch] = useState('')
   const [vendasFilter, setVendasFilter] = useState<'all' | 'recurring' | 'new'>('all')
+  const [vendasStateFilter, setVendasStateFilter] = useState('')
   const [sortKey, setSortKey] = useState<keyof VendasCustomer>('totalSpent')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  // Column visibility
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(ALL_COL_KEYS))
+  const [showColPicker, setShowColPicker] = useState(false)
+  const colPickerRef = useRef<HTMLDivElement>(null)
+
+  // Close col picker on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) {
+        setShowColPicker(false)
+      }
+    }
+    if (showColPicker) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showColPicker])
+
+  const toggleCol = (key: string) => {
+    setVisibleCols(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) { if (next.size > 1) next.delete(key) }
+      else next.add(key)
+      return next
+    })
+  }
 
   const loadCadastros = useCallback(async () => {
     setLoading(true); setError('')
@@ -174,11 +225,26 @@ export default function Dashboard() {
     return matchSearch && matchStatus
   })
 
+  // Unique states for filter dropdown
+  const uniqueStates = useMemo(() => {
+    if (!vendas) return []
+    const states = [...new Set(vendas.customers.map(c => c.state).filter(Boolean) as string[])]
+    return states.sort()
+  }, [vendas])
+
   const filteredVendas = useMemo(() => {
+    const q = vendasSearch.toLowerCase().trim()
     const filtered = (vendas?.customers ?? []).filter((c) => {
-      const matchSearch = vendasSearch === '' || c.email?.toLowerCase().includes(vendasSearch.toLowerCase()) || c.name?.toLowerCase().includes(vendasSearch.toLowerCase())
+      const matchSearch = q === '' ||
+        c.name?.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        (c.phone ?? '').replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        (c.cnpj ?? '').replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        (c.tradeName ?? '').toLowerCase().includes(q) ||
+        (c.corporateName ?? '').toLowerCase().includes(q)
       const matchFilter = vendasFilter === 'all' || (vendasFilter === 'recurring' && c.isRecurring) || (vendasFilter === 'new' && !c.isRecurring)
-      return matchSearch && matchFilter
+      const matchState = vendasStateFilter === '' || c.state === vendasStateFilter
+      return matchSearch && matchFilter && matchState
     })
     return [...filtered].sort((a, b) => {
       const av = a[sortKey] ?? ''
@@ -186,7 +252,7 @@ export default function Dashboard() {
       const cmp = av < bv ? -1 : av > bv ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [vendas, vendasSearch, vendasFilter, sortKey, sortDir])
+  }, [vendas, vendasSearch, vendasFilter, vendasStateFilter, sortKey, sortDir])
 
   const handleSort = (key: keyof VendasCustomer) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -211,6 +277,59 @@ export default function Dashboard() {
     : []
 
   const isLoading = tab === 'cadastros' ? loading : vendasLoading
+
+  // Render a single cell value for a given column key + customer
+  function renderCell(col: ColDef, c: VendasCustomer) {
+    switch (col.key) {
+      case 'name':        return <td key={col.key} className="py-2 pr-3 text-gray-200">{c.name}</td>
+      case 'email':       return <td key={col.key} className="py-2 pr-3 text-gray-400 max-w-[180px] truncate">{c.email}</td>
+      case 'phone':       return <td key={col.key} className="py-2 pr-3 text-gray-400">{fmtPhone(c.phone)}</td>
+      case 'cnpj':        return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.cnpj || '—'}</td>
+      case 'tradeName':   return <td key={col.key} className="py-2 pr-3 text-gray-300">{c.tradeName || c.corporateName || '—'}</td>
+      case 'state':       return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.state || '—'}</td>
+      case 'city':        return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.city || '—'}</td>
+      case 'isRecurring': return (
+        <td key={col.key} className="py-2 pr-3">
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isRecurring ? 'bg-purple-900/60 text-purple-400' : 'bg-blue-900/60 text-blue-400'}`}>
+            {c.isRecurring ? 'Recorrente' : 'Novo'}
+          </span>
+        </td>
+      )
+      case 'registeredAt':   return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.registeredAt ? fmtDate(c.registeredAt) : '—'}</td>
+      case 'firstOrderDate': return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.firstOrderDate ? fmtDate(c.firstOrderDate) : '—'}</td>
+      case 'lastOrderDate':  return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}</td>
+      case 'daysToPurchase': return (
+        <td key={col.key} className="py-2 pr-3 text-center">
+          {c.daysToPurchase !== null
+            ? <span className={`font-medium ${c.daysToPurchase === 0 ? 'text-green-400' : c.daysToPurchase <= 7 ? 'text-yellow-400' : 'text-orange-400'}`}>
+                {c.daysToPurchase === 0 ? 'Mesmo dia' : `${c.daysToPurchase}d`}
+              </span>
+            : <span className="text-gray-600">—</span>}
+        </td>
+      )
+      case 'ordersInPeriod':       return <td key={col.key} className="py-2 pr-3 text-center text-gray-300">{c.ordersInPeriod}</td>
+      case 'totalAllTime':         return (
+        <td key={col.key} className="py-2 pr-3 text-center">
+          <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
+        </td>
+      )
+      case 'avgDaysBetweenOrders': return (
+        <td key={col.key} className="py-2 pr-3 text-center">
+          {c.avgDaysBetweenOrders !== null
+            ? <span className={`font-medium ${c.avgDaysBetweenOrders <= 30 ? 'text-green-400' : c.avgDaysBetweenOrders <= 90 ? 'text-yellow-400' : 'text-gray-400'}`}>
+                a cada {c.avgDaysBetweenOrders}d
+              </span>
+            : <span className="text-gray-600">—</span>}
+        </td>
+      )
+      case 'totalSpent': return <td key={col.key} className="py-2 pr-3 text-gray-300">{fmt(c.totalSpent)}</td>
+      case 'paidSpent':  return <td key={col.key} className="py-2 pr-3 text-gray-300">{c.paidSpent > 0 ? fmt(c.paidSpent) : '—'}</td>
+      case 'utmSource':  return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.utmSource || '—'}</td>
+      case 'utmMedium':  return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.utmMedium || '—'}</td>
+      case 'utmCampaign':return <td key={col.key} className="py-2 text-gray-400">{c.utmCampaign || '—'}</td>
+      default:           return <td key={col.key} className="py-2 pr-3 text-gray-400">—</td>
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -294,7 +413,7 @@ export default function Dashboard() {
                     <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
                   </div>
                   <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-800/40 rounded-lg text-xs text-yellow-400/80">
-                    ⚠️ <strong>"Iniciaram checkout"</strong> e <strong>"Chegaram ao pagamento"</strong> incluem clientes que compraram em datas anteriores ao período (o pedido existe mas o cadastro é mais antigo). Para um funil preciso de Login e Carrinho, é necessário implementar eventos no GTM.
+                    ⚠️ <strong>&quot;Iniciaram checkout&quot;</strong> e <strong>&quot;Chegaram ao pagamento&quot;</strong> incluem clientes que compraram em datas anteriores ao período (o pedido existe mas o cadastro é mais antigo). Para um funil preciso de Login e Carrinho, é necessário implementar eventos no GTM.
                   </div>
                 </div>
               ) : (
@@ -500,7 +619,7 @@ export default function Dashboard() {
           <>
             {vendasError && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{vendasError}</div>}
             <div className="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2.5 text-xs text-gray-400">
-              💡 Esta aba mostra <strong className="text-gray-300">todos os pedidos do período</strong>, independente de quando o cliente se cadastrou. A aba "Cadastros vs. Compras" mostra apenas clientes que se cadastraram no período selecionado.
+              💡 Esta aba mostra <strong className="text-gray-300">todos os pedidos do período</strong>, independente de quando o cliente se cadastrou. A aba &quot;Cadastros vs. Compras&quot; mostra apenas clientes que se cadastraram no período selecionado.
             </div>
             {vendasLoading && <div className="text-center py-20 text-gray-400 text-sm">Buscando pedidos e analisando recorrência... pode levar alguns segundos.</div>}
 
@@ -605,99 +724,145 @@ export default function Dashboard() {
 
                 {/* Tabela clientes */}
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                    <h2 className="text-sm font-semibold text-gray-300">Clientes que compraram ({filteredVendas.length})</h2>
-                    <div className="flex items-center gap-2">
+                  {/* Toolbar */}
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h2 className="text-sm font-semibold text-gray-300">
+                      Clientes que compraram ({filteredVendas.length}
+                      {filteredVendas.length !== (vendas?.customers.length ?? 0) && (
+                        <span className="text-gray-500 font-normal"> de {vendas?.customers.length}</span>
+                      )})
+                    </h2>
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={() => exportToExcel(filteredVendas)}
                         className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors">
                         <Download size={13} /> Excel
                       </button>
-                      <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
-                        <input placeholder="Buscar por nome ou e-mail" value={vendasSearch} onChange={(e) => setVendasSearch(e.target.value)}
-                          className="bg-gray-800 border border-gray-700 rounded pl-8 pr-3 py-1.5 text-sm text-gray-200 w-64" />
-                      </div>
-                      <select value={vendasFilter} onChange={(e) => setVendasFilter(e.target.value as typeof vendasFilter)}
-                        className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200">
-                        <option value="all">Todos</option>
-                        <option value="recurring">Recorrentes</option>
-                        <option value="new">Novos</option>
-                      </select>
                     </div>
                   </div>
+
+                  {/* Filtros */}
+                  <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-gray-800/60 rounded-lg border border-gray-700/50">
+                    {/* Busca expandida */}
+                    <div className="relative flex-1 min-w-[200px]">
+                      <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
+                      <input
+                        placeholder="Nome, e-mail, telefone, CNPJ, nome fantasia…"
+                        value={vendasSearch}
+                        onChange={(e) => setVendasSearch(e.target.value)}
+                        className="bg-gray-800 border border-gray-700 rounded pl-8 pr-3 py-1.5 text-sm text-gray-200 w-full"
+                      />
+                    </div>
+
+                    {/* Filtro estado */}
+                    <select
+                      value={vendasStateFilter}
+                      onChange={(e) => setVendasStateFilter(e.target.value)}
+                      className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
+                    >
+                      <option value="">Todos os estados</option>
+                      {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+
+                    {/* Filtro tipo */}
+                    <select
+                      value={vendasFilter}
+                      onChange={(e) => setVendasFilter(e.target.value as typeof vendasFilter)}
+                      className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
+                    >
+                      <option value="all">Novo + Recorrente</option>
+                      <option value="recurring">Só Recorrentes</option>
+                      <option value="new">Só Novos</option>
+                    </select>
+
+                    {/* Seletor de colunas */}
+                    <div className="relative" ref={colPickerRef}>
+                      <button
+                        onClick={() => setShowColPicker(v => !v)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border transition-colors ${showColPicker ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:text-white hover:border-gray-500'}`}
+                      >
+                        <SlidersHorizontal size={13} />
+                        Colunas
+                        <span className="ml-1 bg-gray-700 text-gray-300 rounded px-1 text-[10px]">{visibleCols.size}/{VENDAS_COLUMNS.length}</span>
+                      </button>
+
+                      {showColPicker && (
+                        <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-xl p-4 z-20 w-80 shadow-2xl">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs text-gray-300 font-semibold">Colunas visíveis</p>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setVisibleCols(new Set(ALL_COL_KEYS))}
+                                className="text-xs text-blue-400 hover:text-blue-300 underline"
+                              >Todas</button>
+                              <span className="text-gray-600">·</span>
+                              <button
+                                onClick={() => setVisibleCols(new Set(['name','email','cnpj','tradeName','state','city','isRecurring','totalSpent','paidSpent']))}
+                                className="text-xs text-gray-400 hover:text-gray-200 underline"
+                              >Compacto</button>
+                              <span className="text-gray-600">·</span>
+                              <button
+                                onClick={() => setVisibleCols(new Set(['name','cnpj','tradeName','state','city','totalSpent','paidSpent']))}
+                                className="text-xs text-gray-400 hover:text-gray-200 underline"
+                              >Só empresa</button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-y-1 gap-x-2">
+                            {VENDAS_COLUMNS.map(col => (
+                              <label key={col.key} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer hover:text-white p-1.5 rounded hover:bg-gray-700 select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={visibleCols.has(col.key)}
+                                  onChange={() => toggleCol(col.key)}
+                                  className="rounded accent-blue-500 cursor-pointer"
+                                />
+                                {col.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Limpar filtros */}
+                    {(vendasSearch || vendasStateFilter || vendasFilter !== 'all') && (
+                      <button
+                        onClick={() => { setVendasSearch(''); setVendasStateFilter(''); setVendasFilter('all') }}
+                        className="text-xs text-red-400 hover:text-red-300 px-2 py-1.5 rounded border border-red-900/50 hover:border-red-800 transition-colors"
+                      >
+                        ✕ Limpar
+                      </button>
+                    )}
+                  </div>
+
                   <div className="overflow-x-auto">
-                    <table className="text-xs" style={{ minWidth: '1100px', width: '100%' }}>
+                    <table className="text-xs" style={{ minWidth: `${visibleCols.size * 110}px`, width: '100%' }}>
                       <thead>
                         <tr className="border-b border-gray-800 text-left text-gray-500 uppercase whitespace-nowrap">
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('name')}>Nome<SortIcon k="name" /></th>
-                          <th className="pb-2 pr-3">E-mail</th>
-                          <th className="pb-2 pr-3">Telefone</th>
-                          <th className="pb-2 pr-3">CNPJ</th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('tradeName')}>Nome Fantasia<SortIcon k="tradeName" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('state')}>Estado<SortIcon k="state" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('city')}>Cidade<SortIcon k="city" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('isRecurring')}>Tipo<SortIcon k="isRecurring" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('registeredAt')}>Cadastro<SortIcon k="registeredAt" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('firstOrderDate')}>1ª Compra<SortIcon k="firstOrderDate" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('lastOrderDate')}>Última Compra<SortIcon k="lastOrderDate" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('daysToPurchase')}>→Compra<SortIcon k="daysToPurchase" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('ordersInPeriod')}>Ped.<SortIcon k="ordersInPeriod" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalAllTime')}>Hist.<SortIcon k="totalAllTime" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('avgDaysBetweenOrders')}>Freq. média<SortIcon k="avgDaysBetweenOrders" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('totalSpent')}>Captado<SortIcon k="totalSpent" /></th>
-                          <th className="pb-2 pr-3 cursor-pointer hover:text-gray-300" onClick={() => handleSort('paidSpent')}>Pago<SortIcon k="paidSpent" /></th>
-                          <th className="pb-2 pr-3">UTM Source</th>
-                          <th className="pb-2 pr-3">UTM Medium</th>
-                          <th className="pb-2">UTM Campaign</th>
+                          {VENDAS_COLUMNS.filter(col => visibleCols.has(col.key)).map(col => (
+                            <th
+                              key={col.key}
+                              className={`pb-2 pr-3 ${col.sortKey ? 'cursor-pointer hover:text-gray-300' : ''}`}
+                              onClick={() => col.sortKey && handleSort(col.sortKey)}
+                            >
+                              {col.label}
+                              {col.sortKey && <SortIcon k={col.sortKey} />}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-800">
                         {filteredVendas.slice(0, 200).map((c) => (
                           <tr key={c.email} className="hover:bg-gray-800/50 transition-colors whitespace-nowrap">
-                            <td className="py-2 pr-3 text-gray-200">{c.name}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.email}</td>
-                            <td className="py-2 pr-3 text-gray-400">{fmtPhone(c.phone)}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.cnpj || '—'}</td>
-                            <td className="py-2 pr-3 text-gray-300">{c.tradeName || c.corporateName || '—'}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.state || '—'}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.city || '—'}</td>
-                            <td className="py-2 pr-3">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isRecurring ? 'bg-purple-900/60 text-purple-400' : 'bg-blue-900/60 text-blue-400'}`}>
-                                {c.isRecurring ? 'Recorrente' : 'Novo'}
-                              </span>
-                            </td>
-                            <td className="py-2 pr-3 text-gray-400">{c.registeredAt ? fmtDate(c.registeredAt) : '—'}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.firstOrderDate ? fmtDate(c.firstOrderDate) : '—'}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}</td>
-                            <td className="py-2 pr-3 text-center">
-                              {c.daysToPurchase !== null
-                                ? <span className={`font-medium ${c.daysToPurchase === 0 ? 'text-green-400' : c.daysToPurchase <= 7 ? 'text-yellow-400' : 'text-orange-400'}`}>
-                                    {c.daysToPurchase === 0 ? 'Mesmo dia' : `${c.daysToPurchase}d`}
-                                  </span>
-                                : <span className="text-gray-600">—</span>}
-                            </td>
-                            <td className="py-2 pr-3 text-center text-gray-300">{c.ordersInPeriod}</td>
-                            <td className="py-2 pr-3 text-center">
-                              <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
-                            </td>
-                            <td className="py-2 pr-3 text-center">
-                              {c.avgDaysBetweenOrders !== null
-                                ? <span className={`font-medium ${c.avgDaysBetweenOrders <= 30 ? 'text-green-400' : c.avgDaysBetweenOrders <= 90 ? 'text-yellow-400' : 'text-gray-400'}`}>
-                                    a cada {c.avgDaysBetweenOrders}d
-                                  </span>
-                                : <span className="text-gray-600">—</span>}
-                            </td>
-                            <td className="py-2 pr-3 text-gray-300">{fmt(c.totalSpent)}</td>
-                            <td className="py-2 pr-3 text-gray-300">{c.paidSpent > 0 ? fmt(c.paidSpent) : '—'}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.utmSource || '—'}</td>
-                            <td className="py-2 pr-3 text-gray-400">{c.utmMedium || '—'}</td>
-                            <td className="py-2 text-gray-400">{c.utmCampaign || '—'}</td>
+                            {VENDAS_COLUMNS.filter(col => visibleCols.has(col.key)).map(col => renderCell(col, c))}
                           </tr>
                         ))}
                       </tbody>
                     </table>
                     {filteredVendas.length > 200 && (
                       <p className="text-xs text-gray-500 mt-3 text-center">Mostrando 200 de {filteredVendas.length}. Use os filtros para refinar.</p>
+                    )}
+                    {filteredVendas.length === 0 && (
+                      <p className="text-xs text-gray-500 mt-6 text-center py-8">Nenhum cliente encontrado com os filtros aplicados.</p>
                     )}
                   </div>
                 </div>
