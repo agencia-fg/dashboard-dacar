@@ -235,11 +235,12 @@ export default function Dashboard() {
   const filteredVendas = useMemo(() => {
     const q = vendasSearch.toLowerCase().trim()
     const filtered = (vendas?.customers ?? []).filter((c) => {
+      const qDigits = q.replace(/\D/g, '')
       const matchSearch = q === '' ||
         c.name?.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
-        (c.phone ?? '').replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
-        (c.cnpj ?? '').replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        (qDigits.length > 0 && (c.phone ?? '').replace(/\D/g, '').includes(qDigits)) ||
+        (qDigits.length > 0 && (c.cnpj ?? '').replace(/\D/g, '').includes(qDigits)) ||
         (c.tradeName ?? '').toLowerCase().includes(q) ||
         (c.corporateName ?? '').toLowerCase().includes(q)
       const matchFilter = vendasFilter === 'all' || (vendasFilter === 'recurring' && c.isRecurring) || (vendasFilter === 'new' && !c.isRecurring)
