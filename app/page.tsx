@@ -132,7 +132,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
 }
 
 export default function Dashboard() {
-  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos'>('cadastros')
+  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn'>('cadastros')
   const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'))
 
@@ -281,9 +281,9 @@ export default function Dashboard() {
     finally { setEvolucaoLoading(false) }
   }, [])
 
-  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos') => {
+  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn') => {
     setTab(t)
-    if ((t === 'vendas' || t === 'regioes') && !vendas) loadVendas()
+    if ((t === 'vendas' || t === 'regioes' || t === 'churn') && !vendas) loadVendas()
     if (t === 'evolucao' && !evolucao) loadEvolucao()
     if (t === 'produtos' && !products) loadProducts()
   }
@@ -292,6 +292,7 @@ export default function Dashboard() {
     if (tab === 'cadastros') { loadCadastros(); loadGA4() }
     else if (tab === 'produtos') { setProducts(null); loadProducts() }
     else { setVendas(null); loadVendas() }
+    // churn reuses vendas data, cleared above
   }
 
   const filteredCustomers = (data?.customers ?? []).filter((c) => {
@@ -354,6 +355,23 @@ export default function Dashboard() {
     : []
 
   const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : vendasLoading
+
+  // Churn risk — computed from vendas data, no extra API needed
+  const TODAY_MS = new Date().setHours(0, 0, 0, 0)
+  const churnList = useMemo(() => {
+    if (!vendas) return []
+    return vendas.customers
+      .filter(c => c.lastOrderDate && c.avgDaysBetweenOrders != null && c.avgDaysBetweenOrders > 0)
+      .map(c => {
+        const freq = c.avgDaysBetweenOrders!
+        const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
+        const diasDesde = Math.floor((TODAY_MS - lastMs) / 86400000)
+        const ratio = diasDesde / freq
+        const risk: 'green' | 'yellow' | 'red' = ratio <= 1 ? 'green' : ratio <= 2 ? 'yellow' : 'red'
+        return { ...c, diasDesde, ratio, risk }
+      })
+      .sort((a, b) => b.ratio - a.ratio)
+  }, [vendas, TODAY_MS])
 
   // Render a single cell value for a given column key + customer
   function renderCell(col: ColDef, c: VendasCustomer) {
@@ -422,7 +440,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-bold text-white">Dacar Tintas — Dashboard</h1>
           <div className="flex gap-1 mt-2">
-            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual'],['produtos','Ranking de Produtos']] as const).map(([t, label]) => (
+            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual'],['produtos','Ranking de Produtos'],['churn','Risco de Churn']] as const).map(([t, label]) => (
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
                 {label}
@@ -1220,6 +1238,92 @@ export default function Dashboard() {
                 </div>
               </>
             )}
+          </>
+        )}
+
+        {tab === 'churn' && (
+          <>
+            {vendasLoading && (
+              <div className="text-center py-20 text-gray-400 text-sm">
+                <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-blue-500" />
+                Carregando dados de clientes...
+              </div>
+            )}
+            {vendas && (() => {
+              const red    = churnList.filter(c => c.risk === 'red')
+              const yellow = churnList.filter(c => c.risk === 'yellow')
+              const green  = churnList.filter(c => c.risk === 'green')
+              const riskLabel = { red: 'Em risco', yellow: 'Atenção', green: 'Em dia' }
+              const riskColor = {
+                red:    { bg: 'bg-red-900/30',    border: 'border-red-800/50',    text: 'text-red-400',    dot: 'bg-red-500' },
+                yellow: { bg: 'bg-yellow-900/20', border: 'border-yellow-800/40', text: 'text-yellow-400', dot: 'bg-yellow-500' },
+                green:  { bg: 'bg-green-900/20',  border: 'border-green-800/40',  text: 'text-green-400',  dot: 'bg-green-500' },
+              }
+              return (
+                <>
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <KpiCard icon={<Users size={20} />}       label="Clientes monitorados" value={churnList.length}  color="blue" />
+                    <KpiCard icon={<TrendingUp size={20} />}  label="Em risco (vermelho)"   value={red.length}       color="red" />
+                    <KpiCard icon={<ShoppingCart size={20} />} label="Atenção (amarelo)"     value={yellow.length}    color="yellow" />
+                    <KpiCard icon={<UserCheck size={20} />}   label="Em dia (verde)"         value={green.length}     color="green" />
+                  </div>
+
+                  <div className="p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
+                    💡 Mostra apenas clientes recorrentes com frequência de compra calculada. <strong>Vermelho</strong>: mais de 2× o intervalo médio sem comprar. <strong>Amarelo</strong>: entre 1× e 2×. <strong>Verde</strong>: dentro do prazo.
+                  </div>
+
+                  {/* Lista por grupo */}
+                  {(['red', 'yellow', 'green'] as const).map(risk => {
+                    const list = risk === 'red' ? red : risk === 'yellow' ? yellow : green
+                    if (list.length === 0) return null
+                    const c = riskColor[risk]
+                    return (
+                      <div key={risk} className={`${c.bg} border ${c.border} rounded-xl p-4`}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className={`w-2.5 h-2.5 rounded-full ${c.dot}`} />
+                          <h2 className={`text-sm font-semibold ${c.text}`}>{riskLabel[risk]} — {list.length} cliente{list.length > 1 ? 's' : ''}</h2>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                            <thead>
+                              <tr className="text-gray-400 border-b border-gray-700 text-xs">
+                                <th className="pb-2 pr-4">Cliente</th>
+                                <th className="pb-2 pr-4">Estado</th>
+                                <th className="pb-2 pr-4 text-right">Freq. média</th>
+                                <th className="pb-2 pr-4 text-right">Dias desde última compra</th>
+                                <th className="pb-2 pr-4 text-right">Atraso</th>
+                                <th className="pb-2 pr-4 text-right">Receita paga</th>
+                                <th className="pb-2 text-right">Última compra</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {list.map(c2 => {
+                                const atraso = Math.max(0, c2.diasDesde - c2.avgDaysBetweenOrders!)
+                                return (
+                                  <tr key={c2.email} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                                    <td className="py-2 pr-4">
+                                      <div className="text-gray-200 font-medium">{c2.name || c2.email}</div>
+                                      {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
+                                    </td>
+                                    <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
+                                    <td className="py-2 pr-4 text-right text-gray-300">{c2.avgDaysBetweenOrders!.toFixed(0)}d</td>
+                                    <td className={`py-2 pr-4 text-right font-semibold ${riskColor[c2.risk].text}`}>{c2.diasDesde}d</td>
+                                    <td className="py-2 pr-4 text-right text-gray-400 text-xs">{atraso > 0 ? `+${atraso}d` : '—'}</td>
+                                    <td className="py-2 pr-4 text-right text-white">{fmt(c2.paidSpent)}</td>
+                                    <td className="py-2 text-right text-gray-400 text-xs">{c2.lastOrderDate ? fmtDate(c2.lastOrderDate) : '—'}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </>
+              )
+            })()}
           </>
         )}
 
