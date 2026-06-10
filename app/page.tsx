@@ -414,7 +414,7 @@ export default function Dashboard() {
         return { ...c, diasDesde, risk }
       })
       .sort((a, b) => b.diasDesde - a.diasDesde)
-  }, [vendas, TODAY_MS])
+  }, [vendasChurn, TODAY_MS])
 
   // Single-purchase customers — shown separately at the bottom
   const singlePurchaseList = useMemo(() => {
@@ -427,7 +427,7 @@ export default function Dashboard() {
         return { ...c, diasDesde }
       })
       .sort((a, b) => b.diasDesde - a.diasDesde)
-  }, [vendas, TODAY_MS])
+  }, [vendasChurn, TODAY_MS])
 
   // Render a single cell value for a given column key + customer
   function renderCell(col: ColDef, c: VendasCustomer) {
