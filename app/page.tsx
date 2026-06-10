@@ -378,32 +378,17 @@ export default function Dashboard() {
 
   const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : tab === 'coorte' ? cohortLoading : vendasLoading
 
-  // Churn risk — computed from vendas data, no extra API needed
+  // Churn risk — fixed thresholds: ≤30d green, 31-60d yellow, >60d red
   const TODAY_MS = new Date().setHours(0, 0, 0, 0)
   const churnList = useMemo(() => {
     if (!vendas) return []
     return vendas.customers
-      .filter(c => c.lastOrderDate && c.avgDaysBetweenOrders != null && c.avgDaysBetweenOrders > 0)
-      .map(c => {
-        const freq = c.avgDaysBetweenOrders!
-        const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
-        const diasDesde = Math.floor((TODAY_MS - lastMs) / 86400000)
-        const ratio = diasDesde / freq
-        const risk: 'green' | 'yellow' | 'red' = ratio <= 1 ? 'green' : ratio <= 2 ? 'yellow' : 'red'
-        return { ...c, diasDesde, ratio, risk }
-      })
-      .sort((a, b) => b.ratio - a.ratio)
-  }, [vendas, TODAY_MS])
-
-  // Single-purchase customers — bought but no frequency established yet
-  const singlePurchaseList = useMemo(() => {
-    if (!vendas) return []
-    return vendas.customers
-      .filter(c => c.lastOrderDate && (c.avgDaysBetweenOrders == null || c.avgDaysBetweenOrders === 0))
+      .filter(c => c.lastOrderDate)
       .map(c => {
         const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
         const diasDesde = Math.floor((TODAY_MS - lastMs) / 86400000)
-        return { ...c, diasDesde }
+        const risk: 'green' | 'yellow' | 'red' = diasDesde <= 30 ? 'green' : diasDesde <= 60 ? 'yellow' : 'red'
+        return { ...c, diasDesde, risk }
       })
       .sort((a, b) => b.diasDesde - a.diasDesde)
   }, [vendas, TODAY_MS])
@@ -1413,7 +1398,7 @@ export default function Dashboard() {
                   </div>
 
                   <div className="p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
-                    💡 Mostra apenas clientes recorrentes com frequência de compra calculada. <strong>Vermelho</strong>: mais de 2× o intervalo médio sem comprar. <strong>Amarelo</strong>: entre 1× e 2×. <strong>Verde</strong>: dentro do prazo.
+                    💡 <strong>Verde</strong>: última compra há até 30 dias. <strong>Amarelo</strong>: 31–60 dias. <strong>Vermelho</strong>: mais de 60 dias sem comprar.
                   </div>
 
                   {/* Lista por grupo */}
@@ -1425,7 +1410,12 @@ export default function Dashboard() {
                       <div key={risk} className={`${c.bg} border ${c.border} rounded-xl p-4`}>
                         <div className="flex items-center gap-2 mb-4">
                           <div className={`w-2.5 h-2.5 rounded-full ${c.dot}`} />
-                          <h2 className={`text-sm font-semibold ${c.text}`}>{riskLabel[risk]} — {list.length} cliente{list.length > 1 ? 's' : ''}</h2>
+                          <h2 className={`text-sm font-semibold ${c.text}`}>
+                            {riskLabel[risk]} — {list.length} cliente{list.length > 1 ? 's' : ''}
+                            <span className="ml-2 font-normal text-gray-500 text-xs">
+                              {risk === 'red' ? '(+60 dias)' : risk === 'yellow' ? '(31–60 dias)' : '(até 30 dias)'}
+                            </span>
+                          </h2>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm text-left">
@@ -1436,80 +1426,31 @@ export default function Dashboard() {
                                 <th className="pb-2 pr-4 text-right">1ª Compra</th>
                                 <th className="pb-2 pr-4 text-right">Ped. total</th>
                                 <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
-                                <th className="pb-2 pr-4 text-right">Freq. média</th>
                                 <th className="pb-2 pr-4 text-right">Dias s/ comprar</th>
-                                <th className="pb-2 pr-4 text-right">Atraso</th>
                                 <th className="pb-2 text-right">Última compra</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {list.map(c2 => {
-                                const atraso = Math.max(0, c2.diasDesde - c2.avgDaysBetweenOrders!)
-                                return (
-                                  <tr key={c2.email} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                                    <td className="py-2 pr-4">
-                                      <div className="text-gray-200 font-medium">{c2.name || c2.email}</div>
-                                      {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
-                                    </td>
-                                    <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
-                                    <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
-                                    <td className="py-2 pr-4 text-right text-gray-300">{c2.totalAllTime}</td>
-                                    <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
-                                    <td className="py-2 pr-4 text-right text-gray-300">{c2.avgDaysBetweenOrders!.toFixed(0)}d</td>
-                                    <td className={`py-2 pr-4 text-right font-semibold ${riskColor[c2.risk].text}`}>{c2.diasDesde}d</td>
-                                    <td className="py-2 pr-4 text-right text-gray-400 text-xs">{atraso > 0 ? `+${atraso}d` : '—'}</td>
-                                    <td className="py-2 text-right text-gray-400 text-xs">{c2.lastOrderDate ? fmtDate(c2.lastOrderDate) : '—'}</td>
-                                  </tr>
-                                )
-                              })}
+                              {list.map(c2 => (
+                                <tr key={c2.email} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                                  <td className="py-2 pr-4">
+                                    <div className="text-gray-200 font-medium">{c2.name || c2.email}</div>
+                                    {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
+                                  </td>
+                                  <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
+                                  <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
+                                  <td className="py-2 pr-4 text-right text-gray-300">{c2.totalAllTime}</td>
+                                  <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
+                                  <td className={`py-2 pr-4 text-right font-semibold ${riskColor[c2.risk].text}`}>{c2.diasDesde}d</td>
+                                  <td className="py-2 text-right text-gray-400 text-xs">{c2.lastOrderDate ? fmtDate(c2.lastOrderDate) : '—'}</td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>
                       </div>
                     )
                   })}
-
-                  {/* Single purchase customers */}
-                  {singlePurchaseList.length > 0 && (
-                    <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="w-2.5 h-2.5 rounded-full bg-gray-500" />
-                        <h2 className="text-sm font-semibold text-gray-400">Sem recorrência estabelecida — {singlePurchaseList.length} cliente{singlePurchaseList.length > 1 ? 's' : ''}</h2>
-                        <span className="text-xs text-gray-600">(apenas 1 compra no período)</span>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                          <thead>
-                            <tr className="text-gray-400 border-b border-gray-700 text-xs">
-                              <th className="pb-2 pr-4">Cliente</th>
-                              <th className="pb-2 pr-4">Estado</th>
-                              <th className="pb-2 pr-4 text-right">1ª Compra</th>
-                              <th className="pb-2 pr-4 text-right">Ped. total</th>
-                              <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
-                              <th className="pb-2 pr-4 text-right">Dias s/ comprar</th>
-                              <th className="pb-2 text-right">Última compra</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {singlePurchaseList.map(c2 => (
-                              <tr key={c2.email} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                                <td className="py-2 pr-4">
-                                  <div className="text-gray-300 font-medium">{c2.name || c2.email}</div>
-                                  {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
-                                </td>
-                                <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
-                                <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
-                                <td className="py-2 pr-4 text-right text-gray-300">{c2.totalAllTime}</td>
-                                <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
-                                <td className="py-2 pr-4 text-right text-gray-400">{c2.diasDesde}d</td>
-                                <td className="py-2 text-right text-gray-400 text-xs">{c2.lastOrderDate ? fmtDate(c2.lastOrderDate) : '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
                 </>
               )
             })()}
