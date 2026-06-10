@@ -515,6 +515,10 @@ export default function Dashboard() {
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
             {isLoading ? 'Carregando...' : 'Atualizar'}
           </button>
+          <button onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login' }}
+            className="px-3 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors">
+            Sair
+          </button>
         </div>
       </div>
 

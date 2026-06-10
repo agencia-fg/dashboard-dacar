@@ -1,18 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const PASSWORD = process.env.DASHBOARD_PASSWORD ?? '7P7yKLqJhZYjqvrV'
 const COOKIE = 'dash_auth'
+
+interface User { email: string; password: string; name: string }
+
+function getUsers(): User[] {
+  try {
+    return JSON.parse(process.env.DASHBOARD_USERS ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function isValidToken(token: string): boolean {
+  try {
+    const [email, password] = Buffer.from(token, 'base64').toString().split(':')
+    return getUsers().some(
+      u => u.email.toLowerCase() === email?.toLowerCase() && u.password === password
+    )
+  } catch {
+    return false
+  }
+}
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Allow API and static files
   if (pathname.startsWith('/api') || pathname.startsWith('/_next') || pathname === '/login') {
     return NextResponse.next()
   }
 
-  const auth = req.cookies.get(COOKIE)?.value
-  if (auth === PASSWORD) return NextResponse.next()
+  const token = req.cookies.get(COOKIE)?.value
+  if (token && isValidToken(token)) return NextResponse.next()
 
   const loginUrl = req.nextUrl.clone()
   loginUrl.pathname = '/login'
