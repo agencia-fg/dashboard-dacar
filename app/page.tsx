@@ -145,9 +145,21 @@ export default function Dashboard() {
   const [vendasLoading, setVendasLoading] = useState(false)
   const [vendasError, setVendasError] = useState('')
 
-  // Funil
+  // Funil VTEX
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null)
   const [funnelLoading, setFunnelLoading] = useState(false)
+
+  // Funil GA4
+  interface GA4FunnelStep { step: string; value: number; pct: number }
+  interface GA4Data {
+    sessions: number; users: number; addToCarts: number
+    checkouts: number; purchases: number; revenue: number
+    startDate: string; endDate: string
+    funnel: GA4FunnelStep[]
+  }
+  const [ga4Data, setGa4Data] = useState<GA4Data | null>(null)
+  const [ga4Loading, setGa4Loading] = useState(false)
+  const [ga4Error, setGa4Error] = useState('')
 
   // Evolução anual
   interface MonthRow {
@@ -211,6 +223,17 @@ export default function Dashboard() {
     finally { setLoading(false) }
   }, [dateFrom, dateTo])
 
+  const loadGA4 = useCallback(async () => {
+    setGa4Loading(true); setGa4Error('')
+    try {
+      const res = await fetch(`/api/ga?startDate=${dateFrom}&endDate=${dateTo}`)
+      const json = await res.json()
+      if (json.error) { setGa4Error(json.error); return }
+      setGa4Data(json)
+    } catch (e: unknown) { setGa4Error(e instanceof Error ? e.message : 'Erro') }
+    finally { setGa4Loading(false) }
+  }, [dateFrom, dateTo])
+
   const loadVendas = useCallback(async () => {
     setVendasLoading(true); setVendasError('')
     try {
@@ -223,7 +246,7 @@ export default function Dashboard() {
     finally { setVendasLoading(false) }
   }, [dateFrom, dateTo])
 
-  useEffect(() => { loadCadastros() }, [loadCadastros])
+  useEffect(() => { loadCadastros(); loadGA4() }, [loadCadastros, loadGA4])
 
   const loadEvolucao = useCallback(async () => {
     setEvolucaoLoading(true); setEvolucaoError('')
@@ -244,7 +267,7 @@ export default function Dashboard() {
   }
 
   const handleUpdate = () => {
-    if (tab === 'cadastros') loadCadastros()
+    if (tab === 'cadastros') { loadCadastros(); loadGA4() }
     else { setVendas(null); loadVendas() }
   }
 
@@ -457,6 +480,56 @@ export default function Dashboard() {
               ) : (
                 <div className="text-center py-8 text-gray-500 text-sm">Carregando funil...</div>
               )}
+
+              {/* GA4 Funnel */}
+              <div className="mt-6 pt-6 border-t border-gray-800">
+                <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-600 text-white text-xs font-bold">G</span>
+                  Funil de Tráfego — Google Analytics 4
+                </h3>
+                {ga4Loading && <div className="text-center py-6 text-gray-500 text-sm">Carregando dados do GA4...</div>}
+                {ga4Error && (
+                  <div className="p-3 bg-red-900/20 border border-red-800/40 rounded-lg text-xs text-red-400">
+                    {ga4Error.includes('not configured')
+                      ? '⚙️ GA4 não configurado — adicione as variáveis GA_PROPERTY_ID, GA_CLIENT_EMAIL e GA_PRIVATE_KEY no Vercel.'
+                      : `Erro GA4: ${ga4Error}`}
+                  </div>
+                )}
+                {ga4Data && !ga4Error && (
+                  <div className="flex flex-col gap-2">
+                    {ga4Data.funnel.map((step, i) => {
+                      const maxVal = ga4Data.funnel[0].value
+                      const barWidth = maxVal > 0 ? (step.value / maxVal) * 100 : 0
+                      const colors = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ec4899']
+                      const color = colors[i] ?? '#6b7280'
+                      return (
+                        <div key={step.step}>
+                          <div className="flex items-center gap-4 mb-1">
+                            <span className="text-xs text-gray-500 w-36 text-right">{step.step}</span>
+                            <div className="flex-1 relative">
+                              <div className="h-9 rounded-lg flex items-center px-4 transition-all"
+                                style={{ width: `${Math.max(barWidth, 8)}%`, backgroundColor: color + '33', border: `1px solid ${color}55` }}>
+                                <span className="text-white font-bold text-sm whitespace-nowrap">{step.value.toLocaleString('pt-BR')}</span>
+                              </div>
+                            </div>
+                            {i > 0 && (
+                              <div className="w-24 text-right">
+                                <span className="text-xs font-semibold" style={{ color }}>
+                                  {step.pct.toFixed(1)}% das sessões
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div className="mt-3 flex gap-6 text-sm flex-wrap">
+                      <div><span className="text-gray-500">Receita GA4: </span><span className="font-bold text-green-400">{fmt(ga4Data.revenue)}</span></div>
+                      <div><span className="text-gray-500">Período: </span><span className="text-gray-300">{ga4Data.startDate} → {ga4Data.endDate}</span></div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
