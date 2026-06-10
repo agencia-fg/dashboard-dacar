@@ -53,20 +53,31 @@ interface OrderDetail {
 // Borracha líquida e tintas base água: densidade ≈ 1 kg/L (ajuste se necessário)
 const KG_TO_LITERS = 1.0
 
-// Extrai litros do nome do produto (ex: "Tinta 3,6 L Branco", "Borracha 20 Kg")
-// Kg é convertido para L usando KG_TO_LITERS
+// Extrai litros do nome do produto. Case-insensitive.
+// Cobre: 3,6 L / 3.6L / 18 Lt / 18 LT / 18 Litros / 900ml / 20 Kg / 20 KG
 function parseVolumeFromName(name: string): number {
   let liters = 0
-  const lMatches = [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(ml|ML|mL|l\b|L\b|lt\b|Lt\b|litros?)/g)]
-  for (const m of lMatches) {
-    const v = parseFloat(m[1].replace(',', '.'))
-    const unit = m[2].toLowerCase()
-    liters += unit.startsWith('ml') ? v / 1000 : v
+
+  // Mililitros: ml (separado para converter /1000 sem colidir com L)
+  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*ml\b/gi)]) {
+    liters += parseFloat(m[1].replace(',', '.')) / 1000
   }
-  const kgMatches = [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|Kg|KG|kgs?)/g)]
-  for (const m of kgMatches) {
+
+  // Litros: L, Lt, Lts, Litro, Litros — exige \b para não pegar letras soltas em outros contextos
+  // Exclui matches que já eram precedidos por 'm' (ml já tratado acima)
+  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:litros?|lts?|l)\b/gi)]) {
+    // checa que não é parte de "ml" no texto original
+    const idx = m.index ?? 0
+    const charBefore = idx > 0 ? name[idx - 1] : ''
+    if (charBefore.toLowerCase() === 'm') continue // já contado como ml
+    liters += parseFloat(m[1].replace(',', '.'))
+  }
+
+  // Kg → L
+  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*kgs?\b/gi)]) {
     liters += parseFloat(m[1].replace(',', '.')) * KG_TO_LITERS
   }
+
   return liters
 }
 
@@ -202,7 +213,8 @@ export async function GET(req: NextRequest) {
       let orderVolumeL = 0
       if (isPaid) {
         for (const item of detail.items ?? []) {
-          orderVolumeL += parseVolumeFromName(item.name ?? '') * (item.quantity ?? 1)
+          const vol = parseVolumeFromName(item.name ?? '')
+          orderVolumeL += vol * (item.quantity ?? 1)
         }
       }
 
