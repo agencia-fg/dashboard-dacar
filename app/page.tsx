@@ -1434,8 +1434,8 @@ export default function Dashboard() {
                                 <th className="pb-2 pr-4">Cliente</th>
                                 <th className="pb-2 pr-4">Estado</th>
                                 <th className="pb-2 pr-4 text-right">1ª Compra</th>
-                                <th className="pb-2 pr-4 text-right">Pedidos</th>
-                                <th className="pb-2 pr-4 text-right">Total Histórico</th>
+                                <th className="pb-2 pr-4 text-right">Ped. total</th>
+                                <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
                                 <th className="pb-2 pr-4 text-right">Freq. média</th>
                                 <th className="pb-2 pr-4 text-right">Dias s/ comprar</th>
                                 <th className="pb-2 pr-4 text-right">Atraso</th>
@@ -1453,8 +1453,8 @@ export default function Dashboard() {
                                     </td>
                                     <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
                                     <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
-                                    <td className="py-2 pr-4 text-right text-gray-300">{c2.ordersInPeriod + (c2.ordersBeforePeriod ?? 0)}</td>
-                                    <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.totalAllTime)}</td>
+                                    <td className="py-2 pr-4 text-right text-gray-300">{c2.totalAllTime}</td>
+                                    <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
                                     <td className="py-2 pr-4 text-right text-gray-300">{c2.avgDaysBetweenOrders!.toFixed(0)}d</td>
                                     <td className={`py-2 pr-4 text-right font-semibold ${riskColor[c2.risk].text}`}>{c2.diasDesde}d</td>
                                     <td className="py-2 pr-4 text-right text-gray-400 text-xs">{atraso > 0 ? `+${atraso}d` : '—'}</td>
@@ -1484,8 +1484,8 @@ export default function Dashboard() {
                               <th className="pb-2 pr-4">Cliente</th>
                               <th className="pb-2 pr-4">Estado</th>
                               <th className="pb-2 pr-4 text-right">1ª Compra</th>
-                              <th className="pb-2 pr-4 text-right">Pedidos</th>
-                              <th className="pb-2 pr-4 text-right">Total Histórico</th>
+                              <th className="pb-2 pr-4 text-right">Ped. total</th>
+                              <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
                               <th className="pb-2 pr-4 text-right">Dias s/ comprar</th>
                               <th className="pb-2 text-right">Última compra</th>
                             </tr>
@@ -1499,8 +1499,8 @@ export default function Dashboard() {
                                 </td>
                                 <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
                                 <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
-                                <td className="py-2 pr-4 text-right text-gray-300">{c2.ordersInPeriod + (c2.ordersBeforePeriod ?? 0)}</td>
-                                <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.totalAllTime)}</td>
+                                <td className="py-2 pr-4 text-right text-gray-300">{c2.totalAllTime}</td>
+                                <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
                                 <td className="py-2 pr-4 text-right text-gray-400">{c2.diasDesde}d</td>
                                 <td className="py-2 text-right text-gray-400 text-xs">{c2.lastOrderDate ? fmtDate(c2.lastOrderDate) : '—'}</td>
                               </tr>
