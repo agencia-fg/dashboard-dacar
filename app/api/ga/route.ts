@@ -11,6 +11,28 @@ const PRIVATE_KEY = (process.env.GA_PRIVATE_KEY ?? '').replace(/\\n/g, '\n')
 const GA4_URL = `https://analyticsdata.googleapis.com/v1beta/properties/${PROPERTY_ID}:runReport`
 
 async function getAccessToken(): Promise<string> {
+  // Prefer OAuth2 refresh token if available
+  const refreshToken  = process.env.GA_OAUTH_REFRESH_TOKEN
+  const oauthClientId = process.env.GA_OAUTH_CLIENT_ID
+  const oauthSecret   = process.env.GA_OAUTH_CLIENT_SECRET
+
+  if (refreshToken && oauthClientId && oauthSecret) {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: oauthClientId,
+        client_secret: oauthSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    })
+    if (!res.ok) throw new Error(`GA4 OAuth token error: ${await res.text()}`)
+    const { access_token } = await res.json()
+    return access_token
+  }
+
+  // Fallback: service account JWT
   const now = Math.floor(Date.now() / 1000)
   const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
   const payload = btoa(JSON.stringify({
@@ -21,8 +43,6 @@ async function getAccessToken(): Promise<string> {
     iat: now,
   }))
   const unsigned = `${header}.${payload}`
-
-  // Import private key and sign
   const keyData = PRIVATE_KEY
     .replace('-----BEGIN PRIVATE KEY-----', '')
     .replace('-----END PRIVATE KEY-----', '')
@@ -33,23 +53,15 @@ async function getAccessToken(): Promise<string> {
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false, ['sign']
   )
-  const sig = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5', cryptoKey,
-    new TextEncoder().encode(unsigned)
-  )
-  const b64sig = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(unsigned))
+  const b64sig = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
   const jwt = `${unsigned}.${b64sig}`
-
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   })
-  if (!tokenRes.ok) {
-    const err = await tokenRes.text()
-    throw new Error(`GA4 token error: ${err}`)
-  }
+  if (!tokenRes.ok) throw new Error(`GA4 token error: ${await tokenRes.text()}`)
   const { access_token } = await tokenRes.json()
   return access_token
 }

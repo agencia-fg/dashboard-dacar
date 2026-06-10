@@ -10,7 +10,7 @@ export async function GET() {
     error = String(e)
   }
   return NextResponse.json({
-    raw: raw.slice(0, 200), // primeiros 200 chars
+    raw: raw.slice(0, 600),
     parsed: parsed ? parsed.map((u: { email: string; name: string }) => ({ email: u.email, name: u.name })) : null,
     error,
   })
