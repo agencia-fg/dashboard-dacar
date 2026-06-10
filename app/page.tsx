@@ -541,51 +541,61 @@ export default function Dashboard() {
               <KpiCard icon={<DollarSign size={20} />} label="Receita no Período" value={data ? fmt(data.summary.totalRevenue) : '—'} color="yellow" />
             </div>
 
-            {/* Funil de Conversão VTEX */}
+            {/* Funil — onde os não-compradores travaram */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-gray-300 mb-6">Funil de Conversão — Jornada do Cliente</h2>
-              {funnelData ? (
-                <div className="flex flex-col gap-1">
-                  {funnelData.funnel.map((step, i) => {
-                    const maxCount = funnelData.funnel[0].count
-                    const barWidth = maxCount > 0 ? (step.count / maxCount) * 100 : 0
-                    return (
-                      <div key={step.step}>
-                        <div className="flex items-center gap-3 mb-0.5">
-                          <span className="text-xs text-gray-400 w-36 text-right leading-tight">{step.label}</span>
+              <h2 className="text-sm font-semibold text-gray-300 mb-1">Onde os novos clientes pararam</h2>
+              <p className="text-xs text-gray-500 mb-6">Dos {data?.summary.neverPurchasedCount ?? '—'} que não compraram no período, em qual etapa cada um travou</p>
+              {data ? (() => {
+                const customers = data.customers as Array<{funnelStage?: string; purchased: boolean}>
+                const naoCompraram = customers.filter(c => !c.purchased)
+                const total = naoCompraram.length
+
+                const etapas = [
+                  { label: 'Chegou ao pagamento', stage: 'Chegou ao pagamento', color: '#f97316', desc: 'Criou pedido mas não pagou' },
+                  { label: 'Iniciou pedido',       stage: 'Iniciou pedido',       color: '#f59e0b', desc: 'Iniciou mas cancelou antes do pagamento' },
+                  { label: 'Acessou o site',        stage: 'Acessou',              color: '#6366f1', desc: 'Logou mas não criou pedido' },
+                  { label: 'Só se cadastrou',       stage: 'Só cadastrou',         color: '#6b7280', desc: 'Nunca acessou após cadastro' },
+                ]
+
+                const counts = etapas.map(e => ({
+                  ...e,
+                  count: naoCompraram.filter(c => (c.funnelStage ?? 'Só cadastrou') === e.stage).length,
+                }))
+
+                const maxCount = Math.max(...counts.map(c => c.count), 1)
+
+                return (
+                  <div className="flex flex-col gap-3">
+                    {counts.map(e => {
+                      const barWidth = (e.count / maxCount) * 100
+                      const pct = total > 0 ? (e.count / total * 100).toFixed(1) : '0'
+                      return (
+                        <div key={e.stage} className="flex items-center gap-3">
+                          <div className="w-40 text-right">
+                            <div className="text-xs text-gray-300 leading-tight">{e.label}</div>
+                            <div className="text-xs text-gray-600 leading-tight">{e.desc}</div>
+                          </div>
                           <div className="flex-1">
                             <div className="h-10 rounded-lg flex items-center px-4 transition-all"
-                              style={{ width: `${Math.max(barWidth, 4)}%`, backgroundColor: step.color + '30', border: `1px solid ${step.color}60` }}>
-                              <span className="text-white font-bold text-sm whitespace-nowrap">{step.count.toLocaleString('pt-BR')}</span>
+                              style={{ width: `${Math.max(barWidth, 3)}%`, backgroundColor: e.color + '30', border: `1px solid ${e.color}60` }}>
+                              <span className="text-white font-bold text-sm">{e.count.toLocaleString('pt-BR')}</span>
                             </div>
                           </div>
-                          <div className="w-44 text-right flex flex-col items-end">
-                            {step.pct !== undefined && (
-                              <span className="text-xs font-semibold" style={{ color: step.color }}>
-                                {step.pct.toFixed(1)}% da etapa anterior
-                              </span>
-                            )}
-                            {i > 0 && funnelData.funnel[0].count > 0 && (
-                              <span className="text-xs text-gray-600">
-                                {((step.count / funnelData.funnel[0].count) * 100).toFixed(1)}% do total
-                              </span>
-                            )}
+                          <div className="w-20 text-right">
+                            <span className="text-xs font-semibold" style={{ color: e.color }}>{pct}%</span>
+                            <div className="text-xs text-gray-600">dos {total}</div>
                           </div>
                         </div>
-                        {i < funnelData.funnel.length - 1 && (
-                          <div className="ml-40 text-xs text-gray-700 mb-0.5">↓</div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  <div className="mt-4 pt-4 border-t border-gray-800 flex flex-wrap gap-6 text-sm">
-                    <div><span className="text-gray-500">Conversão total: </span><span className="font-bold text-white">{funnelData.conversionRate}%</span></div>
-                    <div><span className="text-gray-500">Total de pedidos: </span><span className="font-bold text-white">{funnelData.totalOrders}</span></div>
-                    <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
+                      )
+                    })}
+                    <div className="mt-3 pt-3 border-t border-gray-800 flex flex-wrap gap-6 text-sm">
+                      <div><span className="text-gray-500">Compraram: </span><span className="font-bold text-green-400">{data.summary.purchasedCount}</span><span className="text-gray-600 text-xs ml-1">({data.summary.conversionRate}%)</span></div>
+                      <div><span className="text-gray-500">Receita no período: </span><span className="font-bold text-green-400">{fmt(data.summary.totalRevenue)}</span></div>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500 text-sm">Carregando funil...</div>
+                )
+              })() : (
+                <div className="text-center py-8 text-gray-500 text-sm">Carregando...</div>
               )}
             </div>
 
