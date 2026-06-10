@@ -379,16 +379,30 @@ export default function Dashboard() {
   const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : tab === 'coorte' ? cohortLoading : vendasLoading
 
   // Churn risk — fixed thresholds: ≤30d green, 31-60d yellow, >60d red
+  // Only recurring customers (totalAllTime >= 2) appear in the semaphore
   const TODAY_MS = new Date().setHours(0, 0, 0, 0)
   const churnList = useMemo(() => {
     if (!vendas) return []
     return vendas.customers
-      .filter(c => c.lastOrderDate)
+      .filter(c => c.lastOrderDate && c.totalAllTime >= 2)
       .map(c => {
         const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
         const diasDesde = Math.floor((TODAY_MS - lastMs) / 86400000)
         const risk: 'green' | 'yellow' | 'red' = diasDesde <= 30 ? 'green' : diasDesde <= 60 ? 'yellow' : 'red'
         return { ...c, diasDesde, risk }
+      })
+      .sort((a, b) => b.diasDesde - a.diasDesde)
+  }, [vendas, TODAY_MS])
+
+  // Single-purchase customers — shown separately at the bottom
+  const singlePurchaseList = useMemo(() => {
+    if (!vendas) return []
+    return vendas.customers
+      .filter(c => c.lastOrderDate && c.totalAllTime < 2)
+      .map(c => {
+        const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
+        const diasDesde = Math.floor((TODAY_MS - lastMs) / 86400000)
+        return { ...c, diasDesde }
       })
       .sort((a, b) => b.diasDesde - a.diasDesde)
   }, [vendas, TODAY_MS])
@@ -1390,11 +1404,12 @@ export default function Dashboard() {
               return (
                 <>
                   {/* KPIs */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <KpiCard icon={<Users size={20} />}       label="Clientes monitorados" value={churnList.length}  color="blue" />
-                    <KpiCard icon={<TrendingUp size={20} />}  label="Em risco (vermelho)"   value={red.length}       color="red" />
-                    <KpiCard icon={<ShoppingCart size={20} />} label="Atenção (amarelo)"     value={yellow.length}    color="yellow" />
-                    <KpiCard icon={<UserCheck size={20} />}   label="Em dia (verde)"         value={green.length}     color="green" />
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                    <KpiCard icon={<Repeat2 size={20} />}     label="Recorrentes monitorados" value={churnList.length}         color="blue" />
+                    <KpiCard icon={<TrendingUp size={20} />}  label="Em risco (vermelho)"      value={red.length}              color="red" />
+                    <KpiCard icon={<ShoppingCart size={20} />} label="Atenção (amarelo)"        value={yellow.length}           color="yellow" />
+                    <KpiCard icon={<UserCheck size={20} />}   label="Em dia (verde)"            value={green.length}            color="green" />
+                    <KpiCard icon={<Users size={20} />}       label="Compra única"              value={singlePurchaseList.length} color="purple" />
                   </div>
 
                   <div className="p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
@@ -1451,6 +1466,44 @@ export default function Dashboard() {
                       </div>
                     )
                   })}
+
+                  {/* Single purchase customers */}
+                  {singlePurchaseList.length > 0 && (
+                    <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-2.5 h-2.5 rounded-full bg-gray-500" />
+                        <h2 className="text-sm font-semibold text-gray-400">Compra única — {singlePurchaseList.length} cliente{singlePurchaseList.length > 1 ? 's' : ''}</h2>
+                        <span className="text-xs text-gray-600">ainda sem recorrência estabelecida</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead>
+                            <tr className="text-gray-400 border-b border-gray-700 text-xs">
+                              <th className="pb-2 pr-4">Cliente</th>
+                              <th className="pb-2 pr-4">Estado</th>
+                              <th className="pb-2 pr-4 text-right">1ª Compra</th>
+                              <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
+                              <th className="pb-2 text-right">Dias s/ comprar</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {singlePurchaseList.map(c2 => (
+                              <tr key={c2.email} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                                <td className="py-2 pr-4">
+                                  <div className="text-gray-300 font-medium">{c2.name || c2.email}</div>
+                                  {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
+                                </td>
+                                <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
+                                <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
+                                <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
+                                <td className="py-2 text-right text-gray-400">{c2.diasDesde}d</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </>
               )
             })()}
