@@ -129,7 +129,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
 }
 
 export default function Dashboard() {
-  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes'>('cadastros')
+  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao'>('cadastros')
   const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'))
 
@@ -148,6 +148,19 @@ export default function Dashboard() {
   // Funil
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null)
   const [funnelLoading, setFunnelLoading] = useState(false)
+
+  // Evolução anual
+  interface MonthRow {
+    month: number; label: string
+    curRevenue: number; prevRevenue: number
+    curNew: number; prevNew: number
+    curRecurring: number; prevRecurring: number
+    curVolumeL: number; prevVolumeL: number
+  }
+  interface EvolucaoData { curYear: number; prevYear: number; months: MonthRow[] }
+  const [evolucao, setEvolucao] = useState<EvolucaoData | null>(null)
+  const [evolucaoLoading, setEvolucaoLoading] = useState(false)
+  const [evolucaoError, setEvolucaoError] = useState('')
   const [vendasSearch, setVendasSearch] = useState('')
   const [vendasFilter, setVendasFilter] = useState<'all' | 'recurring' | 'new'>('all')
   const [vendasStateFilter, setVendasStateFilter] = useState('')
@@ -212,9 +225,22 @@ export default function Dashboard() {
 
   useEffect(() => { loadCadastros() }, [loadCadastros])
 
-  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes') => {
+  const loadEvolucao = useCallback(async () => {
+    setEvolucaoLoading(true); setEvolucaoError('')
+    try {
+      const res = await fetch('/api/yearly')
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setEvolucao(json)
+    } catch (e: unknown) { setEvolucaoError(e instanceof Error ? e.message : 'Erro') }
+    finally { setEvolucaoLoading(false) }
+  }, [])
+
+  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao') => {
     setTab(t)
     if ((t === 'vendas' || t === 'regioes') && !vendas) loadVendas()
+    if (t === 'evolucao' && !evolucao) loadEvolucao()
   }
 
   const handleUpdate = () => {
@@ -281,7 +307,7 @@ export default function Dashboard() {
       ]
     : []
 
-  const isLoading = tab === 'cadastros' ? loading : vendasLoading
+  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : vendasLoading
 
   // Render a single cell value for a given column key + customer
   function renderCell(col: ColDef, c: VendasCustomer) {
@@ -350,7 +376,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-bold text-white">Dacar Tintas — Dashboard</h1>
           <div className="flex gap-1 mt-2">
-            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões']] as const).map(([t, label]) => (
+            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual']] as const).map(([t, label]) => (
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
                 {label}
@@ -899,6 +925,96 @@ export default function Dashboard() {
             )}
           </>
         )}
+        {/* ── TAB: EVOLUÇÃO ANUAL ── */}
+        {tab === 'evolucao' && (
+          <>
+            {evolucaoError && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{evolucaoError}</div>}
+            {evolucaoLoading && (
+              <div className="text-center py-20 text-gray-400 text-sm">
+                <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-blue-500" />
+                Buscando dados do ano atual e anterior... pode levar alguns segundos.
+              </div>
+            )}
+            {evolucao && (() => {
+              const { curYear, prevYear, months } = evolucao
+              const curColor = '#3b82f6'
+              const prevColor = '#6b7280'
+              const chartProps = {
+                margin: { top: 5, right: 10, left: 10, bottom: 5 },
+              }
+              const tooltipStyle = { background: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }
+              const axisStyle = { fontSize: 11, fill: '#9ca3af' }
+
+              return (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                    <span className="flex items-center gap-1.5"><span className="w-8 h-0.5 bg-blue-500 inline-block rounded" />{curYear} (atual)</span>
+                    <span className="flex items-center gap-1.5"><span className="w-8 h-0.5 bg-gray-500 inline-block rounded border-dashed" />{prevYear} (anterior)</span>
+                  </div>
+
+                  {/* Receita Paga */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-1">Receita Paga — {curYear} vs {prevYear}</h2>
+                    <p className="text-xs text-gray-500 mb-4">Apenas pedidos com pagamento confirmado</p>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={months} {...chartProps}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="label" tick={axisStyle} />
+                        <YAxis tick={axisStyle} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
+                        <Tooltip contentStyle={tooltipStyle}
+                          formatter={(v: number, name: string) => [
+                            new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v),
+                            name
+                          ]} />
+                        <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                        <Bar dataKey="prevRevenue" name={String(prevYear)} fill={prevColor} radius={[3,3,0,0]} opacity={0.7} />
+                        <Bar dataKey="curRevenue"  name={String(curYear)}  fill={curColor}  radius={[3,3,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Clientes Novos + Recorrentes */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-1">Clientes Novos & Recorrentes — {curYear} vs {prevYear}</h2>
+                    <p className="text-xs text-gray-500 mb-4">Barras empilhadas: azul escuro = recorrentes, azul claro = novos</p>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={months} {...chartProps}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="label" tick={axisStyle} />
+                        <YAxis tick={axisStyle} />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                        <Bar dataKey="prevRecurring" name={`${prevYear} Recorrentes`} stackId="prev" fill="#4b5563" radius={[0,0,0,0]} />
+                        <Bar dataKey="prevNew"       name={`${prevYear} Novos`}       stackId="prev" fill="#9ca3af" radius={[3,3,0,0]} />
+                        <Bar dataKey="curRecurring"  name={`${curYear} Recorrentes`}  stackId="cur"  fill="#1d4ed8" radius={[0,0,0,0]} />
+                        <Bar dataKey="curNew"        name={`${curYear} Novos`}        stackId="cur"  fill="#60a5fa" radius={[3,3,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Litragem */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-1">Litragem Vendida — {curYear} vs {prevYear}</h2>
+                    <p className="text-xs text-gray-500 mb-4">Volume em litros de pedidos pagos (Kg convertido para L)</p>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={months} {...chartProps}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="label" tick={axisStyle} />
+                        <YAxis tick={axisStyle} tickFormatter={(v) => `${v.toLocaleString('pt-BR')}L`} />
+                        <Tooltip contentStyle={tooltipStyle}
+                          formatter={(v: number, name: string) => [`${v.toLocaleString('pt-BR',{maximumFractionDigits:1})} L`, name]} />
+                        <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                        <Bar dataKey="prevVolumeL" name={String(prevYear)} fill={prevColor} radius={[3,3,0,0]} opacity={0.7} />
+                        <Bar dataKey="curVolumeL"  name={String(curYear)}  fill="#06b6d4"  radius={[3,3,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )
+            })()}
+          </>
+        )}
+
       </div>
     </div>
   )
