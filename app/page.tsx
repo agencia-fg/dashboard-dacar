@@ -167,6 +167,14 @@ export default function Dashboard() {
   const [ga4Loading, setGa4Loading] = useState(false)
   const [ga4Error, setGa4Error] = useState('')
 
+  // Churn — fixed 6-month window, independent of the date picker
+  const [vendasChurn, setVendasChurn] = useState<VendasData | null>(null)
+  const [vendasChurnLoading, setVendasChurnLoading] = useState(false)
+  const [vendasChurnError, setVendasChurnError] = useState('')
+  const CHURN_MONTHS = 6
+  const churnDateTo   = new Date().toISOString().slice(0, 10)
+  const churnDateFrom = (() => { const d = new Date(); d.setMonth(d.getMonth() - CHURN_MONTHS); return d.toISOString().slice(0, 10) })()
+
   // Coorte
   const [cohort, setCohort] = useState<CohortData | null>(null)
   const [cohortLoading, setCohortLoading] = useState(false)
@@ -265,6 +273,18 @@ export default function Dashboard() {
 
   useEffect(() => { loadCadastros(); loadGA4() }, [loadCadastros, loadGA4])
 
+  const loadVendasChurn = useCallback(async () => {
+    setVendasChurnLoading(true); setVendasChurnError('')
+    try {
+      const res = await fetch(`/api/vendas?from=${churnDateFrom}&to=${churnDateTo}`)
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setVendasChurn(json)
+    } catch (e: unknown) { setVendasChurnError(e instanceof Error ? e.message : 'Erro') }
+    finally { setVendasChurnLoading(false) }
+  }, [churnDateFrom, churnDateTo])
+
   const loadCohort = useCallback(async () => {
     setCohortLoading(true); setCohortError('')
     try {
@@ -303,7 +323,8 @@ export default function Dashboard() {
 
   const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn' | 'coorte') => {
     setTab(t)
-    if ((t === 'vendas' || t === 'regioes' || t === 'churn') && !vendas) loadVendas()
+    if ((t === 'vendas' || t === 'regioes') && !vendas) loadVendas()
+    if (t === 'churn' && !vendasChurn) loadVendasChurn()
     if (t === 'evolucao' && !evolucao) loadEvolucao()
     if (t === 'produtos' && !products) loadProducts()
     if (t === 'coorte' && !cohort) loadCohort()
@@ -313,6 +334,7 @@ export default function Dashboard() {
     if (tab === 'cadastros') { loadCadastros(); loadGA4() }
     else if (tab === 'produtos') { setProducts(null); loadProducts() }
     else if (tab === 'coorte') { setCohort(null); loadCohort() }
+    else if (tab === 'churn') { setVendasChurn(null); loadVendasChurn() }
     else { setVendas(null); loadVendas() }
     // churn reuses vendas data, cleared above
   }
@@ -376,14 +398,14 @@ export default function Dashboard() {
       ]
     : []
 
-  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : tab === 'coorte' ? cohortLoading : vendasLoading
+  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : tab === 'coorte' ? cohortLoading : tab === 'churn' ? vendasChurnLoading : vendasLoading
 
   // Churn risk — fixed thresholds: ≤30d green, 31-60d yellow, >60d red
   // Only recurring customers (totalAllTime >= 2) appear in the semaphore
   const TODAY_MS = new Date().setHours(0, 0, 0, 0)
   const churnList = useMemo(() => {
-    if (!vendas) return []
-    return vendas.customers
+    if (!vendasChurn) return []
+    return vendasChurn.customers
       .filter(c => c.lastOrderDate && c.totalAllTime >= 2)
       .map(c => {
         const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
@@ -396,8 +418,8 @@ export default function Dashboard() {
 
   // Single-purchase customers — shown separately at the bottom
   const singlePurchaseList = useMemo(() => {
-    if (!vendas) return []
-    return vendas.customers
+    if (!vendasChurn) return []
+    return vendasChurn.customers
       .filter(c => c.lastOrderDate && c.totalAllTime < 2)
       .map(c => {
         const lastMs = new Date(c.lastOrderDate).setHours(0, 0, 0, 0)
@@ -1385,13 +1407,14 @@ export default function Dashboard() {
 
         {tab === 'churn' && (
           <>
-            {vendasLoading && (
+            {vendasChurnLoading && (
               <div className="text-center py-20 text-gray-400 text-sm">
                 <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-blue-500" />
-                Carregando dados de clientes...
+                Carregando dados dos últimos {CHURN_MONTHS} meses...
               </div>
             )}
-            {vendas && (() => {
+            {vendasChurnError && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{vendasChurnError}</div>}
+            {vendasChurn && (() => {
               const red    = churnList.filter(c => c.risk === 'red')
               const yellow = churnList.filter(c => c.risk === 'yellow')
               const green  = churnList.filter(c => c.risk === 'green')
@@ -1412,8 +1435,9 @@ export default function Dashboard() {
                     <KpiCard icon={<Users size={20} />}       label="Compra única"              value={singlePurchaseList.length} color="purple" />
                   </div>
 
-                  <div className="p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
-                    💡 <strong>Verde</strong>: última compra há até 30 dias. <strong>Amarelo</strong>: 31–60 dias. <strong>Vermelho</strong>: mais de 60 dias sem comprar.
+                  <div className="p-3 bg-gray-800/60 border border-gray-700/60 rounded-lg text-xs text-gray-400 flex items-center justify-between flex-wrap gap-2">
+                    <span>📅 Período fixo: <strong className="text-gray-200">{churnDateFrom}</strong> → <strong className="text-gray-200">{churnDateTo}</strong> (últimos {CHURN_MONTHS} meses) — independente do filtro de datas acima.</span>
+                    <span>🟢 até 30d &nbsp;🟡 31–60d &nbsp;🔴 +60d sem comprar</span>
                   </div>
 
                   {/* Lista por grupo */}
