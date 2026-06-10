@@ -14,9 +14,13 @@ function getUsers(): User[] {
 
 function isValidToken(token: string): boolean {
   try {
-    const [email, password] = Buffer.from(token, 'base64').toString().split(':')
+    const decoded = atob(token)
+    const colon = decoded.indexOf(':')
+    if (colon === -1) return false
+    const email = decoded.slice(0, colon)
+    const password = decoded.slice(colon + 1)
     return getUsers().some(
-      u => u.email.toLowerCase() === email?.toLowerCase() && u.password === password
+      u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
     )
   } catch {
     return false

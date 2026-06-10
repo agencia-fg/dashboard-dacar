@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'E-mail ou senha incorretos' }, { status: 401 })
   }
 
-  const token = Buffer.from(`${user.email}:${user.password}`).toString('base64')
+  const token = btoa(`${user.email}:${user.password}`)
   const res = NextResponse.json({ ok: true, name: user.name })
   res.cookies.set(COOKIE, token, {
     httpOnly: true,
