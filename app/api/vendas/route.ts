@@ -49,36 +49,61 @@ interface OrderDetail {
   items?: OrderItem[]
 }
 
-// Fator de conversão Kg → Litros para produtos Dacar
-// Borracha líquida e tintas base água: densidade ≈ 1 kg/L (ajuste se necessário)
+// Kg → L (densidade ~1 para tintas base água / borracha líquida Dacar)
 const KG_TO_LITERS = 1.0
 
-// Extrai litros do nome do produto. Case-insensitive.
-// Cobre: 3,6 L / 3.6L / 18 Lt / 18 LT / 18 Litros / 900ml / 20 Kg / 20 KG
-function parseVolumeFromName(name: string): number {
-  let liters = 0
+// Regras de embalagem: tamanhos vendidos em pacote com N unidades
+// A quantidade VTEX (item.quantity) representa número de PACOTES
+// Portanto: litros totais = litrosDoItem × unidadesPorPacote × item.quantity
+const PACK_RULES: Array<{ liters: number; packSize: number }> = [
+  // Unitários
+  { liters: 18,     packSize: 1 },
+  { liters: 16,     packSize: 1 },
+  { liters: 15,     packSize: 1 },
+  { liters: 24,     packSize: 1 },
+  { liters: 20,     packSize: 1 },
+  // Pacotes de 4
+  { liters: 3.6,    packSize: 4 },
+  { liters: 5.7,    packSize: 4 },
+  // Pacotes de 6
+  { liters: 5,      packSize: 6 },
+  { liters: 1.4,    packSize: 6 },
+  { liters: 0.9,    packSize: 6 }, // 900ml ou 0,9L
+  // Pacotes de 12
+  { liters: 0.225,  packSize: 12 }, // 225ml
+  { liters: 0.1125, packSize: 12 }, // 112,5ml
+]
 
-  // Mililitros: ml (separado para converter /1000 sem colidir com L)
+function getPackSize(liters: number): number {
+  const match = PACK_RULES.find(r => Math.abs(r.liters - liters) < 0.01)
+  return match?.packSize ?? 1 // default unitário se não encontrado
+}
+
+// Extrai litros por UNIDADE do produto (antes de multiplicar por item.quantity)
+// Depois aplica o multiplicador de pacote
+// Case-insensitive. Cobre: 3,6 L / 3.6L / 18 Lt / 18 LT / 18 Litros / 900ml / 20 Kg
+function parseVolumeFromName(name: string): number {
+  let litersPerUnit = 0
+
+  // Mililitros: ml (separado para /1000 sem colidir com L)
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*ml\b/gi)]) {
-    liters += parseFloat(m[1].replace(',', '.')) / 1000
+    litersPerUnit += parseFloat(m[1].replace(',', '.')) / 1000
   }
 
-  // Litros: L, Lt, Lts, Litro, Litros — exige \b para não pegar letras soltas em outros contextos
-  // Exclui matches que já eram precedidos por 'm' (ml já tratado acima)
+  // Litros: L, Lt, Lts, Litro, Litros
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:litros?|lts?|l)\b/gi)]) {
-    // checa que não é parte de "ml" no texto original
     const idx = m.index ?? 0
-    const charBefore = idx > 0 ? name[idx - 1] : ''
-    if (charBefore.toLowerCase() === 'm') continue // já contado como ml
-    liters += parseFloat(m[1].replace(',', '.'))
+    if (idx > 0 && name[idx - 1].toLowerCase() === 'm') continue // já contado como ml
+    litersPerUnit += parseFloat(m[1].replace(',', '.'))
   }
 
   // Kg → L
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*kgs?\b/gi)]) {
-    liters += parseFloat(m[1].replace(',', '.')) * KG_TO_LITERS
+    litersPerUnit += parseFloat(m[1].replace(',', '.')) * KG_TO_LITERS
   }
 
-  return liters
+  const packSize = getPackSize(litersPerUnit)
+  return litersPerUnit * packSize
 }
 
 interface CustomerProfile {
