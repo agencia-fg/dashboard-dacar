@@ -342,7 +342,11 @@ export default function Dashboard() {
   const filteredCustomers = (data?.customers ?? []).filter((c) => {
     const matchSearch = search === '' || c.email?.toLowerCase().includes(search.toLowerCase()) ||
       c.firstName?.toLowerCase().includes(search.toLowerCase()) || c.lastName?.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = filterStatus === 'all' || (filterStatus === 'purchased' && c.purchased) || (filterStatus === 'not_purchased' && !c.purchased)
+    const stage = (c as {funnelStage?: string}).funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
+    const matchStatus = filterStatus === 'all'
+      || (filterStatus === 'purchased' && c.purchased)
+      || (filterStatus === 'not_purchased' && !c.purchased)
+      || filterStatus === stage
     return matchSearch && matchStatus
   })
 
@@ -537,96 +541,52 @@ export default function Dashboard() {
               <KpiCard icon={<DollarSign size={20} />} label="Receita no Período" value={data ? fmt(data.summary.totalRevenue) : '—'} color="yellow" />
             </div>
 
-            {/* Funil Unificado GA4 → VTEX */}
+            {/* Funil de Conversão VTEX */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-sm font-semibold text-gray-300">Funil Completo — Tráfego até Conversão</h2>
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>Google Analytics 4</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>VTEX</span>
-                </div>
-              </div>
-              {(ga4Loading || !funnelData) && !ga4Data && (
-                <div className="text-center py-8 text-gray-500 text-sm">Carregando funil...</div>
-              )}
-              {(() => {
-                const cadastros = data?.summary.totalCustomers ?? 0
-                const compraram = data?.summary.purchasedCount ?? 0
-
-                type UnifiedStep = {
-                  label: string
-                  value: number
-                  source: 'ga4' | 'vtex'
-                  color: string
-                }
-
-                const steps: UnifiedStep[] = [
-                  { label: 'Cadastros', value: cadastros, source: 'vtex', color: '#10b981' },
-                  ...(ga4Data ? [
-                    { label: 'Usuários ativos', value: ga4Data.users, source: 'ga4' as const, color: '#6366f1' },
-                    { label: 'Add ao carrinho', value: ga4Data.addToCarts, source: 'ga4' as const, color: '#f59e0b' },
-                    { label: 'Checkout', value: ga4Data.checkouts, source: 'ga4' as const, color: '#f97316' },
-                  ] : []),
-                  { label: 'Compraram', value: compraram, source: 'vtex', color: '#ec4899' },
-                ]
-
-                const maxVal = steps[0]?.value ?? 1
-
-                return (
-                  <div className="flex flex-col gap-1">
-                    {steps.map((step, i) => {
-                      const barWidth = maxVal > 0 ? (step.value / maxVal) * 100 : 0
-                      const prevVal = i > 0 ? steps[i - 1].value : null
-                      const pctFromPrev = prevVal && prevVal > 0 ? (step.value / prevVal * 100) : null
-                      const pctFromTop = steps[0].value > 0 ? (step.value / steps[0].value * 100) : null
-                      return (
-                        <div key={step.label}>
-                          <div className="flex items-center gap-3 mb-0.5">
-                            <div className="flex items-center gap-1.5 w-32 justify-end">
-                              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: step.source === 'ga4' ? '#3b82f6' : '#10b981' }}></span>
-                              <span className="text-xs text-gray-400 text-right leading-tight">{step.label}</span>
-                            </div>
-                            <div className="flex-1 relative">
-                              <div className="h-10 rounded-lg flex items-center px-4 transition-all"
-                                style={{ width: `${Math.max(barWidth, 4)}%`, backgroundColor: step.color + '30', border: `1px solid ${step.color}60` }}>
-                                <span className="text-white font-bold text-sm whitespace-nowrap">{step.value.toLocaleString('pt-BR')}</span>
-                              </div>
-                            </div>
-                            <div className="w-44 text-right flex flex-col items-end">
-                              {pctFromPrev !== null && (
-                                <span className="text-xs font-semibold" style={{ color: step.color }}>
-                                  {pctFromPrev.toFixed(1)}% da etapa anterior
-                                </span>
-                              )}
-                              {pctFromTop !== null && i > 0 && (
-                                <span className="text-xs text-gray-600">{pctFromTop.toFixed(1)}% do topo</span>
-                              )}
+              <h2 className="text-sm font-semibold text-gray-300 mb-6">Funil de Conversão — Jornada do Cliente</h2>
+              {funnelData ? (
+                <div className="flex flex-col gap-1">
+                  {funnelData.funnel.map((step, i) => {
+                    const maxCount = funnelData.funnel[0].count
+                    const barWidth = maxCount > 0 ? (step.count / maxCount) * 100 : 0
+                    return (
+                      <div key={step.step}>
+                        <div className="flex items-center gap-3 mb-0.5">
+                          <span className="text-xs text-gray-400 w-36 text-right leading-tight">{step.label}</span>
+                          <div className="flex-1">
+                            <div className="h-10 rounded-lg flex items-center px-4 transition-all"
+                              style={{ width: `${Math.max(barWidth, 4)}%`, backgroundColor: step.color + '30', border: `1px solid ${step.color}60` }}>
+                              <span className="text-white font-bold text-sm whitespace-nowrap">{step.count.toLocaleString('pt-BR')}</span>
                             </div>
                           </div>
-                          {i < steps.length - 1 && (
-                            <div className="ml-36 pl-1 text-xs text-gray-700 mb-0.5">↓</div>
-                          )}
+                          <div className="w-44 text-right flex flex-col items-end">
+                            {step.pct !== undefined && (
+                              <span className="text-xs font-semibold" style={{ color: step.color }}>
+                                {step.pct.toFixed(1)}% da etapa anterior
+                              </span>
+                            )}
+                            {i > 0 && funnelData.funnel[0].count > 0 && (
+                              <span className="text-xs text-gray-600">
+                                {((step.count / funnelData.funnel[0].count) * 100).toFixed(1)}% do total
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      )
-                    })}
-                    <div className="mt-4 pt-4 border-t border-gray-800 flex flex-wrap gap-6 text-sm">
-                      {funnelData && (
-                        <>
-                          <div><span className="text-gray-500">Conversão cadastros→compra: </span><span className="font-bold text-white">{funnelData.conversionRate}%</span></div>
-                          <div><span className="text-gray-500">Total de pedidos: </span><span className="font-bold text-white">{funnelData.totalOrders}</span></div>
-                          <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
-                        </>
-                      )}
-                      {ga4Data && (
-                        <div><span className="text-gray-500">Receita GA4: </span><span className="font-bold text-blue-400">{fmt(ga4Data.revenue)}</span></div>
-                      )}
-                      {ga4Error && (
-                        <div className="text-xs text-red-400">{ga4Error.includes('not configured') ? '⚙️ GA4 não configurado' : `GA4: ${ga4Error}`}</div>
-                      )}
-                    </div>
+                        {i < funnelData.funnel.length - 1 && (
+                          <div className="ml-40 text-xs text-gray-700 mb-0.5">↓</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div className="mt-4 pt-4 border-t border-gray-800 flex flex-wrap gap-6 text-sm">
+                    <div><span className="text-gray-500">Conversão total: </span><span className="font-bold text-white">{funnelData.conversionRate}%</span></div>
+                    <div><span className="text-gray-500">Total de pedidos: </span><span className="font-bold text-white">{funnelData.totalOrders}</span></div>
+                    <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
                   </div>
-                )
-              })()}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500 text-sm">Carregando funil...</div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -706,6 +666,10 @@ export default function Dashboard() {
                     <option value="all">Todos</option>
                     <option value="purchased">Compraram</option>
                     <option value="not_purchased">Não compraram</option>
+                    <option value="Chegou ao pagamento">Chegou ao pagamento</option>
+                    <option value="Iniciou pedido">Iniciou pedido</option>
+                    <option value="Acessou">Acessou</option>
+                    <option value="Só cadastrou">Só cadastrou</option>
                   </select>
                 </div>
               </div>
@@ -727,9 +691,18 @@ export default function Dashboard() {
                         <td className="py-2 pr-4 text-gray-400">{fmtPhone(c.phone)}</td>
                         <td className="py-2 pr-4 text-gray-400">{c.createdIn ? fmtDate(c.createdIn) : '—'}</td>
                         <td className="py-2 pr-4">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.purchased ? 'bg-green-900/60 text-green-400' : 'bg-red-900/60 text-red-400'}`}>
-                            {c.purchased ? 'Comprou' : 'Não comprou'}
-                          </span>
+                          {(() => {
+                            const stage = (c as {funnelStage?: string}).funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
+                            const cfg: Record<string, {bg: string; text: string}> = {
+                              'Comprou':              { bg: 'bg-green-900/60',  text: 'text-green-400' },
+                              'Chegou ao pagamento':  { bg: 'bg-yellow-900/60', text: 'text-yellow-400' },
+                              'Iniciou pedido':       { bg: 'bg-orange-900/60', text: 'text-orange-400' },
+                              'Acessou':              { bg: 'bg-blue-900/60',   text: 'text-blue-400' },
+                              'Só cadastrou':         { bg: 'bg-gray-800',      text: 'text-gray-500' },
+                            }
+                            const { bg, text } = cfg[stage] ?? { bg: 'bg-gray-800', text: 'text-gray-400' }
+                            return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${bg} ${text}`}>{stage}</span>
+                          })()}
                         </td>
                         <td className="py-2 pr-4 text-center text-gray-300">{c.orderCount}</td>
                         <td className="py-2 pr-4 text-gray-300">{c.totalSpent > 0 ? fmt(c.totalSpent) : '—'}</td>

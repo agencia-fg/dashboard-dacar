@@ -55,6 +55,10 @@ export async function GET(req: NextRequest) {
   const dateFrom = searchParams.get('from') ?? getDefaultFrom()
   const dateTo = searchParams.get('to') ?? getDefaultTo()
 
+  const PAYMENT_PENDING_STATUSES = new Set([
+    'payment-pending', 'waiting-for-authorization', 'approve',
+  ])
+
   try {
     const [customers, allOrders] = await Promise.all([
       fetchAllCustomers(dateFrom, dateTo),
@@ -63,26 +67,29 @@ export async function GET(req: NextRequest) {
 
     const totalRegistrations = customers.length
 
-    // Quem iniciou checkout (qualquer pedido criado, excluindo apenas rascunhos)
-    const checkoutOrders = allOrders.filter(o =>
-      o.status !== 'unknown' && o.clientName
-    )
-    const checkoutUniqueClients = countUniqueClients(checkoutOrders)
+    // Quem acessou no período (lastInteractionIn dentro do range)
+    const dateFromMs = new Date(dateFrom + 'T00:00:00.000Z').getTime()
+    const dateToMs   = new Date(dateTo   + 'T23:59:59.999Z').getTime()
+    const accessedCount = customers.filter(c => {
+      if (!c.lastInteractionIn) return false
+      const t = new Date(c.lastInteractionIn).getTime()
+      return t >= dateFromMs && t <= dateToMs
+    }).length
 
-    // Quem chegou à etapa de pagamento (payment-pending ou acima)
+    // Quem iniciou qualquer pedido no período
+    const anyOrderClients = countUniqueClients(allOrders.filter(o => o.clientName))
+
+    // Quem chegou ao pagamento (payment-pending ou acima, exceto cancelados)
     const paymentOrders = allOrders.filter(o =>
-      o.status !== 'canceled' && o.clientName
+      o.status !== 'canceled' && o.status !== 'unknown' && o.clientName
     )
     const paymentUniqueClients = countUniqueClients(paymentOrders)
 
-    // Quem efetivamente comprou (pagamento confirmado)
+    // Quem efetivamente comprou
     const paidOrders = allOrders.filter(o => PAID_STATUSES.has(o.status))
     const paidUniqueClients = countUniqueClients(paidOrders)
-
-    // Receita total dos pedidos pagos
     const paidRevenue = paidOrders.reduce((s, o) => s + (o.totalValue ?? 0) / 100, 0)
 
-    // Status breakdown para entender o funil
     const statusBreakdown: Record<string, number> = {}
     for (const o of allOrders) {
       statusBreakdown[o.status] = (statusBreakdown[o.status] ?? 0) + 1
@@ -91,34 +98,38 @@ export async function GET(req: NextRequest) {
     const funnel = [
       {
         step: 'Cadastros',
-        label: 'Clientes cadastrados',
+        label: 'Cadastrados no período',
         count: totalRegistrations,
-        description: 'Se cadastraram no período',
         color: '#3b82f6',
+        pct: undefined,
       },
       {
-        step: 'Checkout',
-        label: 'Iniciaram checkout',
-        count: checkoutUniqueClients,
-        description: 'Criaram um pedido (qualquer status)',
+        step: 'Acessaram',
+        label: 'Acessaram o site',
+        count: accessedCount,
         color: '#8b5cf6',
-        pct: totalRegistrations > 0 ? ((checkoutUniqueClients / totalRegistrations) * 100) : 0,
+        pct: totalRegistrations > 0 ? (accessedCount / totalRegistrations) * 100 : 0,
+      },
+      {
+        step: 'Pedido',
+        label: 'Iniciaram pedido',
+        count: anyOrderClients,
+        color: '#f59e0b',
+        pct: accessedCount > 0 ? (anyOrderClients / accessedCount) * 100 : 0,
       },
       {
         step: 'Pagamento',
         label: 'Chegaram ao pagamento',
         count: paymentUniqueClients,
-        description: 'Pedido não cancelado (tentaram pagar)',
-        color: '#f59e0b',
-        pct: checkoutUniqueClients > 0 ? ((paymentUniqueClients / checkoutUniqueClients) * 100) : 0,
+        color: '#f97316',
+        pct: anyOrderClients > 0 ? (paymentUniqueClients / anyOrderClients) * 100 : 0,
       },
       {
         step: 'Compra',
         label: 'Compraram',
         count: paidUniqueClients,
-        description: 'Pagamento confirmado',
         color: '#10b981',
-        pct: paymentUniqueClients > 0 ? ((paidUniqueClients / paymentUniqueClients) * 100) : 0,
+        pct: paymentUniqueClients > 0 ? (paidUniqueClients / paymentUniqueClients) * 100 : 0,
       },
     ]
 

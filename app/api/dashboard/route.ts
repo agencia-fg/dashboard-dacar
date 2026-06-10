@@ -3,6 +3,38 @@ import { fetchAllCustomers, fetchOrdersForCustomers, VtexCustomer, VtexOrder } f
 
 export const dynamic = 'force-dynamic'
 
+const PAID_STATUSES = new Set([
+  'payment-approved', 'invoiced', 'handling',
+  'ready-for-handling', 'waiting-for-fulfillment',
+  'shipped', 'delivered', 'order-completed',
+])
+
+function getFunnelStage(
+  orders: VtexOrder[],
+  lastInteractionIn: string | null | undefined,
+  dateFrom: string,
+  dateTo: string
+): string {
+  const dateFromMs = new Date(dateFrom + 'T00:00:00.000Z').getTime()
+  const dateToMs   = new Date(dateTo   + 'T23:59:59.999Z').getTime()
+
+  const periodOrders = orders.filter(o => {
+    const t = new Date(o.creationDate).getTime()
+    return t >= dateFromMs && t <= dateToMs
+  })
+
+  if (periodOrders.some(o => PAID_STATUSES.has(o.status))) return 'Comprou'
+  if (periodOrders.some(o => o.status !== 'canceled' && o.status !== 'unknown')) return 'Chegou ao pagamento'
+  if (periodOrders.length > 0) return 'Iniciou pedido'
+
+  if (lastInteractionIn) {
+    const t = new Date(lastInteractionIn).getTime()
+    if (t >= dateFromMs && t <= dateToMs) return 'Acessou'
+  }
+
+  return 'Só cadastrou'
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const dateFrom = searchParams.get('from') ?? getDefaultFrom()
@@ -21,13 +53,15 @@ export async function GET(req: NextRequest) {
               (a, b) => new Date(a.creationDate).getTime() - new Date(b.creationDate).getTime()
             )[0].creationDate
           : null
+      const funnelStage = getFunnelStage(customerOrders, c.lastInteractionIn, dateFrom, dateTo)
 
       return {
         ...c,
         orders: customerOrders,
         totalSpent,
         firstPurchaseDate,
-        purchased: customerOrders.length > 0,
+        purchased: customerOrders.some(o => PAID_STATUSES.has(o.status)),
+        funnelStage,
       }
     })
 
@@ -38,7 +72,6 @@ export async function GET(req: NextRequest) {
     const conversionRate =
       totalCustomers > 0 ? (purchasedCustomers.length / totalCustomers) * 100 : 0
 
-    // Registration by day
     const byDay = buildDailyMap(enriched, dateFrom, dateTo)
 
     return NextResponse.json({
@@ -62,6 +95,8 @@ export async function GET(req: NextRequest) {
         orderCount: c.orders.length,
         totalSpent: c.totalSpent,
         firstPurchaseDate: c.firstPurchaseDate,
+        funnelStage: c.funnelStage,
+        lastInteractionIn: c.lastInteractionIn ?? null,
       })),
     })
   } catch (err: unknown) {
