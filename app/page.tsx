@@ -52,7 +52,7 @@ interface VendasCustomer {
   city: string | null; state: string | null; approved: boolean | null
   paidVolumeL: number
 }
-interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number }
+interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number; orders: number; paidOrders: number; paidVolumeL: number; avgTicket: number; avgPaidTicket: number }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
 
 interface SKURow { name: string; orders: number; unitsSold: number; revenue: number; volumeL: number }
@@ -707,7 +707,15 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold text-gray-300">Receita por Estado</h2>
                     <button onClick={() => {
-                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({ Estado: r.state, 'Total Clientes': r.count, Novos: r.newCount, Recorrentes: r.recurringCount, 'Receita Captada (R$)': r.revenue.toFixed(2), 'Receita Paga (R$)': r.paidRevenue.toFixed(2), '% Pago/Captado': r.revenue > 0 ? ((r.paidRevenue / r.revenue) * 100).toFixed(1) + '%' : '—' })))
+                      const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({
+                        Estado: r.state, 'Total Clientes': r.count, Novos: r.newCount, Recorrentes: r.recurringCount,
+                        'Pedidos': r.orders, 'Receita Captada (R$)': r.revenue.toFixed(2),
+                        'Receita Paga (R$)': r.paidRevenue.toFixed(2),
+                        'Ticket Médio Captado (R$)': r.avgTicket.toFixed(2),
+                        'Ticket Médio Pago (R$)': r.avgPaidTicket.toFixed(2),
+                        'Volume Pago (L)': r.paidVolumeL.toFixed(1),
+                        '% Pago/Captado': r.revenue > 0 ? ((r.paidRevenue / r.revenue) * 100).toFixed(1) + '%' : '—',
+                      })))
                       const wb = XLSX.utils.book_new()
                       XLSX.utils.book_append_sheet(wb, ws, 'Regiões')
                       XLSX.writeFile(wb, 'dacar-regioes.xlsx')
@@ -720,12 +728,15 @@ export default function Dashboard() {
                       <thead>
                         <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
                           <th className="pb-2 pr-4">Estado</th>
-                          <th className="pb-2 pr-4">Total Clientes</th>
+                          <th className="pb-2 pr-4">Clientes</th>
                           <th className="pb-2 pr-4">Novos</th>
                           <th className="pb-2 pr-4">Recorrentes</th>
+                          <th className="pb-2 pr-4">Pedidos</th>
                           <th className="pb-2 pr-4">Receita Captada</th>
                           <th className="pb-2 pr-4">Receita Paga</th>
-                          <th className="pb-2 pr-4">% Pago/Captado</th>
+                          <th className="pb-2 pr-4">Ticket Médio (cap.)</th>
+                          <th className="pb-2 pr-4">Ticket Médio (pago)</th>
+                          <th className="pb-2 pr-4">Volume (L)</th>
                           <th className="pb-2">% do Total</th>
                         </tr>
                       </thead>
@@ -742,11 +753,12 @@ export default function Dashboard() {
                               <span className="text-purple-400 font-medium">{r.recurringCount}</span>
                               <span className="text-gray-600 text-xs ml-1">({r.count > 0 ? ((r.recurringCount/r.count)*100).toFixed(0) : 0}%)</span>
                             </td>
+                            <td className="py-2 pr-4 text-gray-300">{r.orders}</td>
                             <td className="py-2 pr-4 text-gray-300">{fmt(r.revenue)}</td>
                             <td className="py-2 pr-4 text-green-400 font-medium">{fmt(r.paidRevenue)}</td>
-                            <td className="py-2 pr-4 text-gray-400 text-xs">
-                              {r.revenue > 0 ? `${((r.paidRevenue / r.revenue) * 100).toFixed(1)}%` : '—'}
-                            </td>
+                            <td className="py-2 pr-4 text-gray-400 text-xs">{r.avgTicket > 0 ? fmt(r.avgTicket) : '—'}</td>
+                            <td className="py-2 pr-4 text-yellow-400 text-xs font-medium">{r.avgPaidTicket > 0 ? fmt(r.avgPaidTicket) : '—'}</td>
+                            <td className="py-2 pr-4 text-cyan-400 text-xs">{r.paidVolumeL > 0 ? `${r.paidVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L` : '—'}</td>
                             <td className="py-2">
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 bg-gray-800 rounded-full h-1.5 max-w-24">

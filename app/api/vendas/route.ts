@@ -331,18 +331,25 @@ export async function GET(req: NextRequest) {
     const paidCustomers = customers.filter(c => c.paidSpent > 0)
 
     // Breakdown por estado
-    const byState = new Map<string, { count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number }>()
+    const byState = new Map<string, { count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number; orders: number; paidOrders: number; paidVolumeL: number }>()
     for (const c of customers) {
       const s = c.state ?? 'Não informado'
-      if (!byState.has(s)) byState.set(s, { count: 0, newCount: 0, recurringCount: 0, revenue: 0, paidRevenue: 0 })
+      if (!byState.has(s)) byState.set(s, { count: 0, newCount: 0, recurringCount: 0, revenue: 0, paidRevenue: 0, orders: 0, paidOrders: 0, paidVolumeL: 0 })
       const e = byState.get(s)!
       e.count++
       if (c.isRecurring) e.recurringCount++; else e.newCount++
       e.revenue += c.totalSpent
       e.paidRevenue += c.paidSpent
+      e.orders += c.ordersInPeriod
+      e.paidOrders += c.paidSpent > 0 ? c.ordersInPeriod : 0
+      e.paidVolumeL += c.paidVolumeL
     }
     const regionData = Array.from(byState.entries())
-      .map(([state, v]) => ({ state, ...v }))
+      .map(([state, v]) => ({
+        state, ...v,
+        avgTicket: v.orders > 0 ? Math.round(v.revenue / v.orders * 100) / 100 : 0,
+        avgPaidTicket: v.paidOrders > 0 ? Math.round(v.paidRevenue / v.paidOrders * 100) / 100 : 0,
+      }))
       .sort((a, b) => b.revenue - a.revenue)
     const newWithDays = newCustomers.filter(c => c.daysToPurchase !== null)
     const avgDaysToPurchase = newWithDays.length > 0
