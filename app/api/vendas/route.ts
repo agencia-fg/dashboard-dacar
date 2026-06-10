@@ -115,6 +115,7 @@ interface CustomerProfile {
   city: string | null
   state: string | null
   approved: boolean | null
+  lastInteractionIn: string | null
 }
 
 async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): Promise<{ list: OrderListItem[]; total: number }> {
@@ -169,10 +170,10 @@ async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; 
 
 async function fetchCustomerProfile(email: string): Promise<CustomerProfile> {
   const realEmail = extractRealEmail(email)
-  const fields = 'createdIn,corporateDocument,corporateName,tradeName,city,state,approved'
+  const fields = 'createdIn,corporateDocument,corporateName,tradeName,city,state,approved,lastInteractionIn'
   const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=${fields}&email=${encodeURIComponent(realEmail)}`
   const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-1' } })
-  if (!res.ok) return { createdIn: null, corporateDocument: null, corporateName: null, tradeName: null, city: null, state: null, approved: null }
+  if (!res.ok) return { createdIn: null, corporateDocument: null, corporateName: null, tradeName: null, city: null, state: null, approved: null, lastInteractionIn: null }
   const data = await res.json()
   const r = data?.[0]
   return {
@@ -183,6 +184,7 @@ async function fetchCustomerProfile(email: string): Promise<CustomerProfile> {
     city: r?.city ?? null,
     state: r?.state ?? null,
     approved: r?.approved ?? null,
+    lastInteractionIn: r?.lastInteractionIn ?? null,
   }
 }
 
@@ -319,6 +321,7 @@ export async function GET(req: NextRequest) {
         city: info.city ?? enrich?.profile?.city ?? null,
         state: info.state ?? enrich?.profile?.state ?? null,
         approved: enrich?.profile?.approved ?? null,
+        lastInteractionIn: enrich?.profile?.lastInteractionIn ?? null,
         utmSource: utm?.utmSource ?? null,
         utmMedium: utm?.utmMedium ?? null,
         utmCampaign: utm?.utmCampaign ?? null,

@@ -537,100 +537,96 @@ export default function Dashboard() {
               <KpiCard icon={<DollarSign size={20} />} label="Receita no Período" value={data ? fmt(data.summary.totalRevenue) : '—'} color="yellow" />
             </div>
 
-            {/* Funil de etapas */}
+            {/* Funil Unificado GA4 → VTEX */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-gray-300 mb-6">Funil de Conversão — Jornada do Cliente</h2>
-              {funnelData ? (
-                <div className="flex flex-col gap-2">
-                  {funnelData.funnel.map((step, i) => {
-                    const maxCount = funnelData.funnel[0].count
-                    const barWidth = maxCount > 0 ? (step.count / maxCount) * 100 : 0
-                    return (
-                      <div key={step.step}>
-                        <div className="flex items-center gap-4 mb-1">
-                          <span className="text-xs text-gray-500 w-24 text-right">{step.label}</span>
-                          <div className="flex-1 relative">
-                            <div className="h-10 rounded-lg flex items-center px-4 transition-all"
-                              style={{ width: `${Math.max(barWidth, 8)}%`, backgroundColor: step.color + '33', border: `1px solid ${step.color}55` }}>
-                              <span className="text-white font-bold text-sm whitespace-nowrap">{step.count.toLocaleString('pt-BR')}</span>
-                            </div>
-                          </div>
-                          <div className="w-32 text-right">
-                            {step.pct !== undefined && (
-                              <span className="text-xs font-semibold" style={{ color: step.color }}>
-                                {step.pct.toFixed(1)}% da etapa anterior
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {i < funnelData.funnel.length - 1 && (
-                          <div className="ml-24 pl-4 text-xs text-gray-600 mb-1">↓ {(funnelData.funnel[0].count > 0 ? ((funnelData.funnel[i + 1].count / funnelData.funnel[0].count) * 100) : 0).toFixed(1)}% do total de cadastros</div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  <div className="mt-4 pt-4 border-t border-gray-800 flex gap-6 text-sm">
-                    <div><span className="text-gray-500">Conversão total: </span><span className="font-bold text-white">{funnelData.conversionRate}%</span></div>
-                    <div><span className="text-gray-500">Total de pedidos: </span><span className="font-bold text-white">{funnelData.totalOrders}</span></div>
-                    <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
-                  </div>
-                  <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-800/40 rounded-lg text-xs text-yellow-400/80">
-                    ⚠️ <strong>&quot;Iniciaram checkout&quot;</strong> e <strong>&quot;Chegaram ao pagamento&quot;</strong> incluem clientes que compraram em datas anteriores ao período (o pedido existe mas o cadastro é mais antigo). Para um funil preciso de Login e Carrinho, é necessário implementar eventos no GTM.
-                  </div>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-sm font-semibold text-gray-300">Funil Completo — Tráfego até Conversão</h2>
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>Google Analytics 4</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>VTEX</span>
                 </div>
-              ) : (
+              </div>
+              {(ga4Loading || !funnelData) && !ga4Data && (
                 <div className="text-center py-8 text-gray-500 text-sm">Carregando funil...</div>
               )}
+              {(() => {
+                const cadastros = data?.summary.totalCustomers ?? 0
+                const compraram = data?.summary.purchasedCount ?? 0
 
-              {/* GA4 Funnel */}
-              <div className="mt-6 pt-6 border-t border-gray-800">
-                <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-600 text-white text-xs font-bold">G</span>
-                  Funil de Tráfego — Google Analytics 4
-                </h3>
-                {ga4Loading && <div className="text-center py-6 text-gray-500 text-sm">Carregando dados do GA4...</div>}
-                {ga4Error && (
-                  <div className="p-3 bg-red-900/20 border border-red-800/40 rounded-lg text-xs text-red-400">
-                    {ga4Error.includes('not configured')
-                      ? '⚙️ GA4 não configurado — adicione as variáveis GA_PROPERTY_ID, GA_CLIENT_EMAIL e GA_PRIVATE_KEY no Vercel.'
-                      : `Erro GA4: ${ga4Error}`}
-                  </div>
-                )}
-                {ga4Data && !ga4Error && (
-                  <div className="flex flex-col gap-2">
-                    {ga4Data.funnel.map((step, i) => {
-                      const maxVal = ga4Data.funnel[0].value
+                type UnifiedStep = {
+                  label: string
+                  value: number
+                  source: 'ga4' | 'vtex'
+                  color: string
+                }
+
+                const steps: UnifiedStep[] = [
+                  { label: 'Cadastros', value: cadastros, source: 'vtex', color: '#10b981' },
+                  ...(ga4Data ? [
+                    { label: 'Usuários ativos', value: ga4Data.users, source: 'ga4' as const, color: '#6366f1' },
+                    { label: 'Add ao carrinho', value: ga4Data.addToCarts, source: 'ga4' as const, color: '#f59e0b' },
+                    { label: 'Checkout', value: ga4Data.checkouts, source: 'ga4' as const, color: '#f97316' },
+                  ] : []),
+                  { label: 'Compraram', value: compraram, source: 'vtex', color: '#ec4899' },
+                ]
+
+                const maxVal = steps[0]?.value ?? 1
+
+                return (
+                  <div className="flex flex-col gap-1">
+                    {steps.map((step, i) => {
                       const barWidth = maxVal > 0 ? (step.value / maxVal) * 100 : 0
-                      const colors = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ec4899']
-                      const color = colors[i] ?? '#6b7280'
+                      const prevVal = i > 0 ? steps[i - 1].value : null
+                      const pctFromPrev = prevVal && prevVal > 0 ? (step.value / prevVal * 100) : null
+                      const pctFromTop = steps[0].value > 0 ? (step.value / steps[0].value * 100) : null
                       return (
-                        <div key={step.step}>
-                          <div className="flex items-center gap-4 mb-1">
-                            <span className="text-xs text-gray-500 w-36 text-right">{step.step}</span>
+                        <div key={step.label}>
+                          <div className="flex items-center gap-3 mb-0.5">
+                            <div className="flex items-center gap-1.5 w-32 justify-end">
+                              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: step.source === 'ga4' ? '#3b82f6' : '#10b981' }}></span>
+                              <span className="text-xs text-gray-400 text-right leading-tight">{step.label}</span>
+                            </div>
                             <div className="flex-1 relative">
-                              <div className="h-9 rounded-lg flex items-center px-4 transition-all"
-                                style={{ width: `${Math.max(barWidth, 8)}%`, backgroundColor: color + '33', border: `1px solid ${color}55` }}>
+                              <div className="h-10 rounded-lg flex items-center px-4 transition-all"
+                                style={{ width: `${Math.max(barWidth, 4)}%`, backgroundColor: step.color + '30', border: `1px solid ${step.color}60` }}>
                                 <span className="text-white font-bold text-sm whitespace-nowrap">{step.value.toLocaleString('pt-BR')}</span>
                               </div>
                             </div>
-                            {i > 0 && (
-                              <div className="w-24 text-right">
-                                <span className="text-xs font-semibold" style={{ color }}>
-                                  {step.pct.toFixed(1)}% das sessões
+                            <div className="w-44 text-right flex flex-col items-end">
+                              {pctFromPrev !== null && (
+                                <span className="text-xs font-semibold" style={{ color: step.color }}>
+                                  {pctFromPrev.toFixed(1)}% da etapa anterior
                                 </span>
-                              </div>
-                            )}
+                              )}
+                              {pctFromTop !== null && i > 0 && (
+                                <span className="text-xs text-gray-600">{pctFromTop.toFixed(1)}% do topo</span>
+                              )}
+                            </div>
                           </div>
+                          {i < steps.length - 1 && (
+                            <div className="ml-36 pl-1 text-xs text-gray-700 mb-0.5">↓</div>
+                          )}
                         </div>
                       )
                     })}
-                    <div className="mt-3 flex gap-6 text-sm flex-wrap">
-                      <div><span className="text-gray-500">Receita GA4: </span><span className="font-bold text-green-400">{fmt(ga4Data.revenue)}</span></div>
-                      <div><span className="text-gray-500">Período: </span><span className="text-gray-300">{ga4Data.startDate} → {ga4Data.endDate}</span></div>
+                    <div className="mt-4 pt-4 border-t border-gray-800 flex flex-wrap gap-6 text-sm">
+                      {funnelData && (
+                        <>
+                          <div><span className="text-gray-500">Conversão cadastros→compra: </span><span className="font-bold text-white">{funnelData.conversionRate}%</span></div>
+                          <div><span className="text-gray-500">Total de pedidos: </span><span className="font-bold text-white">{funnelData.totalOrders}</span></div>
+                          <div><span className="text-gray-500">Receita paga: </span><span className="font-bold text-green-400">{fmt(funnelData.paidRevenue)}</span></div>
+                        </>
+                      )}
+                      {ga4Data && (
+                        <div><span className="text-gray-500">Receita GA4: </span><span className="font-bold text-blue-400">{fmt(ga4Data.revenue)}</span></div>
+                      )}
+                      {ga4Error && (
+                        <div className="text-xs text-red-400">{ga4Error.includes('not configured') ? '⚙️ GA4 não configurado' : `GA4: ${ga4Error}`}</div>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+                )
+              })()}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
 
   const clientId     = process.env.GA_OAUTH_CLIENT_ID!
   const clientSecret = process.env.GA_OAUTH_CLIENT_SECRET!
-  const redirectUri  = `${process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dacar-dash.vercel.app'}/api/ga-oauth-callback`
+  const redirectUri  = `${process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dashboard-dacar.vercel.app'}/api/ga-oauth-callback`
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',

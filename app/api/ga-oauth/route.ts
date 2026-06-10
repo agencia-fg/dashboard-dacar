@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   const clientId = process.env.GA_OAUTH_CLIENT_ID!
-  const redirectUri = `${process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dacar-dash.vercel.app'}/api/ga-oauth-callback`
+  const redirectUri = `${process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dashboard-dacar.vercel.app'}/api/ga-oauth-callback`
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.searchParams.set('client_id', clientId)
