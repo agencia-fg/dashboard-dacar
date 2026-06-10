@@ -46,9 +46,9 @@ async function fetchYearOrders(year: number): Promise<OListItem[]> {
 
 async function fetchDetails(orderIds: string[]): Promise<Map<string, number>> {
   const volMap = new Map<string, number>()
-  for (let i = 0; i < orderIds.length; i += 10) {
+  for (let i = 0; i < orderIds.length; i += 15) {
     const batch = await Promise.all(
-      orderIds.slice(i, i + 10).map(id =>
+      orderIds.slice(i, i + 15).map(id =>
         fetch(`https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders/${id}`, { headers: h })
           .then(r => r.ok ? r.json() : null)
       )
@@ -95,9 +95,9 @@ export async function GET() {
     if (!firstSeen.has(key)) firstSeen.set(key, o.orderId)
   }
 
-  // Fetch details for volume (paid orders only, cap at 200/year)
-  const curPaid = curOrders.filter(o => PAID.has(o.status)).slice(0, 200)
-  const prevPaid = prevOrders.filter(o => PAID.has(o.status)).slice(0, 200)
+  // Fetch details para volume — todos os pedidos pagos dos dois anos
+  const curPaid = curOrders.filter(o => PAID.has(o.status))
+  const prevPaid = prevOrders.filter(o => PAID.has(o.status))
   const [curVolMap, prevVolMap] = await Promise.all([
     fetchDetails(curPaid.map(o => o.orderId)),
     fetchDetails(prevPaid.map(o => o.orderId)),
