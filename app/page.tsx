@@ -962,8 +962,8 @@ export default function Dashboard() {
                         <XAxis dataKey="label" tick={axisStyle} />
                         <YAxis tick={axisStyle} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
                         <Tooltip contentStyle={tooltipStyle}
-                          formatter={(v: number, name: string) => [
-                            new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v),
+                          formatter={(v, name) => [
+                            new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)),
                             name
                           ]} />
                         <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
@@ -1002,7 +1002,7 @@ export default function Dashboard() {
                         <XAxis dataKey="label" tick={axisStyle} />
                         <YAxis tick={axisStyle} tickFormatter={(v) => `${v.toLocaleString('pt-BR')}L`} />
                         <Tooltip contentStyle={tooltipStyle}
-                          formatter={(v: number, name: string) => [`${v.toLocaleString('pt-BR',{maximumFractionDigits:1})} L`, name]} />
+                          formatter={(v, name) => [`${Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1})} L`, name]} />
                         <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
                         <Bar dataKey="prevVolumeL" name={String(prevYear)} fill={prevColor} radius={[3,3,0,0]} opacity={0.7} />
                         <Bar dataKey="curVolumeL"  name={String(curYear)}  fill="#06b6d4"  radius={[3,3,0,0]} />
