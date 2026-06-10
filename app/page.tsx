@@ -55,6 +55,9 @@ interface VendasCustomer {
 interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number }
 interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
 
+interface SKURow { name: string; orders: number; unitsSold: number; revenue: number; volumeL: number }
+interface ProductsData { skus: SKURow[]; totalRevenue: number; totalVolumeL: number; totalOrders: number; dateFrom: string; dateTo: string }
+
 // ── Column definitions ─────────────────────────────────────────────
 interface ColDef { key: string; label: string; sortKey: keyof VendasCustomer | null }
 const VENDAS_COLUMNS: ColDef[] = [
@@ -129,7 +132,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
 }
 
 export default function Dashboard() {
-  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao'>('cadastros')
+  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos'>('cadastros')
   const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'))
 
@@ -160,6 +163,12 @@ export default function Dashboard() {
   const [ga4Data, setGa4Data] = useState<GA4Data | null>(null)
   const [ga4Loading, setGa4Loading] = useState(false)
   const [ga4Error, setGa4Error] = useState('')
+
+  // Produtos
+  const [products, setProducts] = useState<ProductsData | null>(null)
+  const [productsLoading, setProductsLoading] = useState(false)
+  const [productsError, setProductsError] = useState('')
+  const [productSearch, setProductSearch] = useState('')
 
   // Evolução anual
   interface MonthRow {
@@ -248,6 +257,18 @@ export default function Dashboard() {
 
   useEffect(() => { loadCadastros(); loadGA4() }, [loadCadastros, loadGA4])
 
+  const loadProducts = useCallback(async () => {
+    setProductsLoading(true); setProductsError('')
+    try {
+      const res = await fetch(`/api/products?from=${dateFrom}&to=${dateTo}`)
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setProducts(json)
+    } catch (e: unknown) { setProductsError(e instanceof Error ? e.message : 'Erro') }
+    finally { setProductsLoading(false) }
+  }, [dateFrom, dateTo])
+
   const loadEvolucao = useCallback(async () => {
     setEvolucaoLoading(true); setEvolucaoError('')
     try {
@@ -260,14 +281,16 @@ export default function Dashboard() {
     finally { setEvolucaoLoading(false) }
   }, [])
 
-  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao') => {
+  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos') => {
     setTab(t)
     if ((t === 'vendas' || t === 'regioes') && !vendas) loadVendas()
     if (t === 'evolucao' && !evolucao) loadEvolucao()
+    if (t === 'produtos' && !products) loadProducts()
   }
 
   const handleUpdate = () => {
     if (tab === 'cadastros') { loadCadastros(); loadGA4() }
+    else if (tab === 'produtos') { setProducts(null); loadProducts() }
     else { setVendas(null); loadVendas() }
   }
 
@@ -330,7 +353,7 @@ export default function Dashboard() {
       ]
     : []
 
-  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : vendasLoading
+  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : vendasLoading
 
   // Render a single cell value for a given column key + customer
   function renderCell(col: ColDef, c: VendasCustomer) {
@@ -399,7 +422,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-bold text-white">Dacar Tintas — Dashboard</h1>
           <div className="flex gap-1 mt-2">
-            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual']] as const).map(([t, label]) => (
+            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual'],['produtos','Ranking de Produtos']] as const).map(([t, label]) => (
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
                 {label}
@@ -1085,6 +1108,118 @@ export default function Dashboard() {
                 </div>
               )
             })()}
+          </>
+        )}
+
+        {tab === 'produtos' && (
+          <>
+            {productsError && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{productsError}</div>}
+            {productsLoading && (
+              <div className="text-center py-20 text-gray-400 text-sm">
+                <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-blue-500" />
+                Buscando detalhes dos pedidos... pode levar alguns segundos.
+              </div>
+            )}
+            {products && (
+              <>
+                {/* KPIs */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <KpiCard icon={<ShoppingCart size={20} />} label="Pedidos Pagos" value={products.totalOrders} color="blue" />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Total (produtos)" value={fmt(products.totalRevenue)} color="green" />
+                  <KpiCard icon={<TrendingUp size={20} />} label="Volume Total" value={`${products.totalVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L`} color="purple" />
+                  <KpiCard icon={<Users size={20} />} label="SKUs únicos" value={products.skus.length} color="yellow" />
+                </div>
+
+                {/* Tabela */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                    <h2 className="text-sm font-semibold text-gray-300">Ranking de SKUs — por receita</h2>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <input
+                          className="bg-gray-800 border border-gray-700 rounded pl-8 pr-3 py-1.5 text-sm text-white placeholder-gray-500 w-56 focus:outline-none focus:border-blue-500"
+                          placeholder="Buscar produto..."
+                          value={productSearch}
+                          onChange={e => setProductSearch(e.target.value)}
+                        />
+                      </div>
+                      <button onClick={() => {
+                        const ws = XLSX.utils.json_to_sheet(products.skus.map(s => ({
+                          'Produto': s.name, 'Pedidos': s.orders, 'Unidades Vendidas': s.unitsSold,
+                          'Receita (R$)': s.revenue.toFixed(2), 'Volume (L)': s.volumeL.toFixed(1),
+                          '% Receita': products.totalRevenue > 0 ? ((s.revenue / products.totalRevenue) * 100).toFixed(1) + '%' : '—',
+                        })))
+                        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Produtos')
+                        XLSX.writeFile(wb, `ranking-produtos-${products.dateFrom}-${products.dateTo}.xlsx`)
+                      }} className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors">
+                        <Download size={13} /> Excel
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead>
+                        <tr className="text-gray-400 border-b border-gray-800 text-xs">
+                          <th className="pb-2 pr-4">#</th>
+                          <th className="pb-2 pr-4">Produto</th>
+                          <th className="pb-2 pr-4 text-right">Pedidos</th>
+                          <th className="pb-2 pr-4 text-right">Unidades</th>
+                          <th className="pb-2 pr-4 text-right">Receita</th>
+                          <th className="pb-2 pr-4 text-right">% Receita</th>
+                          <th className="pb-2 text-right">Volume (L)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {products.skus
+                          .filter(s => productSearch === '' || s.name.toLowerCase().includes(productSearch.toLowerCase()))
+                          .map((sku, i) => {
+                            const pct = products.totalRevenue > 0 ? (sku.revenue / products.totalRevenue) * 100 : 0
+                            return (
+                              <tr key={sku.name} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                                <td className="py-2 pr-4 text-gray-500 text-xs">{i + 1}</td>
+                                <td className="py-2 pr-4 text-gray-200 max-w-xs">
+                                  <div className="truncate" title={sku.name}>{sku.name}</div>
+                                  <div className="mt-0.5 h-1 rounded-full bg-gray-800 w-full">
+                                    <div className="h-1 rounded-full bg-blue-500" style={{ width: `${Math.min(pct * 3, 100)}%` }} />
+                                  </div>
+                                </td>
+                                <td className="py-2 pr-4 text-right text-gray-300">{sku.orders}</td>
+                                <td className="py-2 pr-4 text-right text-gray-300">{sku.unitsSold}</td>
+                                <td className="py-2 pr-4 text-right font-medium text-white">{fmt(sku.revenue)}</td>
+                                <td className="py-2 pr-4 text-right text-gray-400 text-xs">{pct.toFixed(1)}%</td>
+                                <td className="py-2 text-right text-cyan-400">{sku.volumeL > 0 ? `${sku.volumeL.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} L` : '—'}</td>
+                              </tr>
+                            )
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Top 10 por receita — gráfico */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                  <h2 className="text-sm font-semibold text-gray-300 mb-4">Top 10 Produtos por Receita</h2>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={products.skus.slice(0, 10).map(s => ({ ...s, shortName: s.name.length > 30 ? s.name.slice(0, 30) + '…' : s.name }))}
+                      layout="vertical"
+                      margin={{ top: 0, right: 20, left: 180, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+                      <YAxis type="category" dataKey="shortName" tick={{ fontSize: 11, fill: '#9ca3af' }} width={175} />
+                      <Tooltip
+                        contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                        formatter={(v) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v)), 'Receita']}
+                      />
+                      <Bar dataKey="revenue" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
           </>
         )}
 
