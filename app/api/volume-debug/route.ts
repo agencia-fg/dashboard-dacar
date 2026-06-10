@@ -13,7 +13,7 @@ const KG_TO_LITERS = 1.0
 const PACK_RULES: Array<{ liters: number; packSize: number }> = [
   { liters: 18, packSize: 1 }, { liters: 16, packSize: 1 }, { liters: 15, packSize: 1 },
   { liters: 24, packSize: 1 }, { liters: 20, packSize: 1 },
-  { liters: 3.6, packSize: 4 }, { liters: 5.7, packSize: 4 },
+  { liters: 3.6, packSize: 4 }, { liters: 5.7, packSize: 4 }, { liters: 5.8, packSize: 4 },
   { liters: 5, packSize: 6 }, { liters: 1.4, packSize: 6 }, { liters: 0.9, packSize: 6 },
   { liters: 0.225, packSize: 12 }, { liters: 0.1125, packSize: 12 },
 ]

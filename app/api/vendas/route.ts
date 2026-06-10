@@ -65,6 +65,7 @@ const PACK_RULES: Array<{ liters: number; packSize: number }> = [
   // Pacotes de 4
   { liters: 3.6,    packSize: 4 },
   { liters: 5.7,    packSize: 4 },
+  { liters: 5.8,    packSize: 4 }, // Cimento Queimado 5,8 Kg
   // Pacotes de 6
   { liters: 5,      packSize: 6 },
   { liters: 1.4,    packSize: 6 },
