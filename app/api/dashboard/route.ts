@@ -9,9 +9,14 @@ const PAID_STATUSES = new Set([
   'shipped', 'delivered', 'order-completed',
 ])
 
+// "Acessou" = voltou ao site após o cadastro. O lastInteractionIn é gravado no
+// próprio ato de cadastro, então só conta como retorno se vier com folga depois.
+const RETURN_VISIT_MARGIN_MS = 12 * 60 * 60 * 1000 // 12h
+
 function getFunnelStage(
   orders: VtexOrder[],
   lastInteractionIn: string | null | undefined,
+  createdIn: string | null | undefined,
   dateFrom: string,
   dateTo: string
 ): string {
@@ -27,9 +32,12 @@ function getFunnelStage(
   if (periodOrders.some(o => o.status !== 'canceled' && o.status !== 'unknown')) return 'Chegou ao pagamento'
   if (periodOrders.length > 0) return 'Iniciou pedido'
 
-  if (lastInteractionIn) {
-    const t = new Date(lastInteractionIn).getTime()
-    if (t >= dateFromMs && t <= dateToMs) return 'Acessou'
+  if (lastInteractionIn && createdIn) {
+    const interaction = new Date(lastInteractionIn).getTime()
+    const created = new Date(createdIn).getTime()
+    if (interaction > created + RETURN_VISIT_MARGIN_MS && interaction >= dateFromMs && interaction <= dateToMs) {
+      return 'Acessou'
+    }
   }
 
   return 'Só cadastrou'
@@ -53,7 +61,7 @@ export async function GET(req: NextRequest) {
               (a, b) => new Date(a.creationDate).getTime() - new Date(b.creationDate).getTime()
             )[0].creationDate
           : null
-      const funnelStage = getFunnelStage(customerOrders, c.lastInteractionIn, dateFrom, dateTo)
+      const funnelStage = getFunnelStage(customerOrders, c.lastInteractionIn, c.createdIn, dateFrom, dateTo)
 
       return {
         ...c,

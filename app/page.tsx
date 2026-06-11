@@ -553,8 +553,8 @@ export default function Dashboard() {
                 const etapas = [
                   { label: 'Chegou ao pagamento', stage: 'Chegou ao pagamento', color: '#f97316', desc: 'Criou pedido mas não pagou' },
                   { label: 'Iniciou pedido',       stage: 'Iniciou pedido',       color: '#f59e0b', desc: 'Iniciou mas cancelou antes do pagamento' },
-                  { label: 'Acessou o site',        stage: 'Acessou',              color: '#6366f1', desc: 'Logou mas não criou pedido' },
-                  { label: 'Só se cadastrou',       stage: 'Só cadastrou',         color: '#6b7280', desc: 'Nunca acessou após cadastro' },
+                  { label: 'Voltou ao site',        stage: 'Acessou',              color: '#6366f1', desc: 'Retornou após o cadastro, sem pedido' },
+                  { label: 'Só se cadastrou',       stage: 'Só cadastrou',         color: '#6b7280', desc: 'Não voltou após o cadastro' },
                 ]
 
                 const counts = etapas.map(e => ({
