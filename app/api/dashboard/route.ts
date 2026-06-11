@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
         firstPurchaseDate: c.firstPurchaseDate,
         funnelStage: c.funnelStage,
         lastInteractionIn: c.lastInteractionIn ?? null,
+        approved: c.approved ?? null,
       })),
     })
   } catch (err: unknown) {

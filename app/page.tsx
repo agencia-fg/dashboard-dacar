@@ -27,6 +27,7 @@ interface Customer {
   paidSpent?: number
   firstPurchaseDate: string | null
   funnelStage?: string
+  approved?: boolean | null
 }
 interface DashboardData { summary: Summary; byDay: DayData[]; customers: Customer[] }
 
@@ -350,10 +351,11 @@ export default function Dashboard() {
   const filteredCustomers = (data?.customers ?? []).filter((c) => {
     const matchSearch = search === '' || c.email?.toLowerCase().includes(search.toLowerCase()) ||
       c.firstName?.toLowerCase().includes(search.toLowerCase()) || c.lastName?.toLowerCase().includes(search.toLowerCase())
-    const stage = (c as {funnelStage?: string}).funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
+    const stage = c.funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
     const matchStatus = filterStatus === 'all'
       || (filterStatus === 'purchased' && c.purchased)
       || (filterStatus === 'not_purchased' && !c.purchased)
+      || (filterStatus === 'reprovado' && c.approved !== true)
       || filterStatus === stage
     return matchSearch && matchStatus
   })
@@ -562,10 +564,9 @@ export default function Dashboard() {
             {/* Funil — onde os não-compradores travaram */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-gray-300 mb-1">Onde os novos clientes pararam</h2>
-              <p className="text-xs text-gray-500 mb-6">Dos {data?.summary.neverPurchasedCount ?? '—'} que não compraram no período, em qual etapa cada um travou</p>
               {data ? (() => {
-                const customers = data.customers as Array<{funnelStage?: string; purchased: boolean}>
-                const naoCompraram = customers.filter(c => !c.purchased)
+                const aprovados = data.customers.filter(c => c.approved === true)
+                const naoCompraram = aprovados.filter(c => !c.purchased)
                 const total = naoCompraram.length
 
                 const etapas = [
@@ -581,9 +582,14 @@ export default function Dashboard() {
                 }))
 
                 const maxCount = Math.max(...counts.map(c => c.count), 1)
+                const compraramAprovados = aprovados.filter(c => c.purchased).length
+                const reprovados = data.customers.length - aprovados.length
 
                 return (
                   <div className="flex flex-col gap-3">
+                    <p className="text-xs text-gray-500 mb-3">
+                      Considerando apenas os {aprovados.length} cadastros aprovados — {compraramAprovados} compraram, {total} não. {reprovados > 0 && <span className="text-red-400/70">{reprovados} reprovados na triagem ficam fora do funil.</span>}
+                    </p>
                     {counts.map(e => {
                       const barWidth = (e.count / maxCount) * 100
                       const pct = total > 0 ? (e.count / total * 100).toFixed(1) : '0'
@@ -607,7 +613,7 @@ export default function Dashboard() {
                       )
                     })}
                     <div className="mt-3 pt-3 border-t border-gray-800 flex flex-wrap gap-6 text-sm">
-                      <div><span className="text-gray-500">Compraram: </span><span className="font-bold text-green-400">{data.summary.purchasedCount}</span><span className="text-gray-600 text-xs ml-1">({data.summary.conversionRate}%)</span></div>
+                      <div><span className="text-gray-500">Compraram: </span><span className="font-bold text-green-400">{compraramAprovados}</span><span className="text-gray-600 text-xs ml-1">({aprovados.length > 0 ? (compraramAprovados / aprovados.length * 100).toFixed(1) : 0}% dos aprovados)</span></div>
                       <div><span className="text-gray-500">Receita no período: </span><span className="font-bold text-green-400">{fmt(data.summary.totalRevenue)}</span></div>
                     </div>
                   </div>
@@ -698,6 +704,7 @@ export default function Dashboard() {
                     <option value="Iniciou pedido">Iniciou pedido</option>
                     <option value="Acessou">Acessou</option>
                     <option value="Só cadastrou">Só cadastrou</option>
+                    <option value="reprovado">Reprovados</option>
                   </select>
                 </div>
               </div>
@@ -720,7 +727,7 @@ export default function Dashboard() {
                         <td className="py-2 pr-4 text-gray-400">{c.createdIn ? fmtDate(c.createdIn) : '—'}</td>
                         <td className="py-2 pr-4">
                           {(() => {
-                            const stage = (c as {funnelStage?: string}).funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
+                            const stage = c.funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
                             const cfg: Record<string, {bg: string; text: string}> = {
                               'Comprou':              { bg: 'bg-green-900/60',  text: 'text-green-400' },
                               'Chegou ao pagamento':  { bg: 'bg-yellow-900/60', text: 'text-yellow-400' },
@@ -729,7 +736,14 @@ export default function Dashboard() {
                               'Só cadastrou':         { bg: 'bg-gray-800',      text: 'text-gray-500' },
                             }
                             const { bg, text } = cfg[stage] ?? { bg: 'bg-gray-800', text: 'text-gray-400' }
-                            return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${bg} ${text}`}>{stage}</span>
+                            return (
+                              <span className="inline-flex items-center gap-1">
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${bg} ${text}`}>{stage}</span>
+                                {c.approved !== true && (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-900/60 text-red-400">Reprovado</span>
+                                )}
+                              </span>
+                            )
                           })()}
                         </td>
                         <td className="py-2 pr-4 text-center text-gray-300">{c.orderCount}</td>
