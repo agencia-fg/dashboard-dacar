@@ -241,6 +241,27 @@ export async function GET(req: NextRequest) {
     const sampleOrders = orders.slice(0, 300)
     const details = await batchProcess(sampleOrders, 15, (o) => fetchOrderDetail(o.orderId))
 
+    // 2b. Meio de pagamento por estado (a partir dos detalhes, que têm endereço)
+    const paymentStateMap = new Map<string, { orders: number; paidOrders: number; captada: number; paga: number }>()
+    for (const detail of details) {
+      if (!detail) continue
+      const st = detail.shippingData?.selectedAddresses?.[0]?.state ?? '??'
+      const method = paymentByOrderId.get(detail.orderId) ?? 'Não informado'
+      const key = `${st}|${method}`
+      if (!paymentStateMap.has(key)) paymentStateMap.set(key, { orders: 0, paidOrders: 0, captada: 0, paga: 0 })
+      const p = paymentStateMap.get(key)!
+      const value = (detail.value ?? 0) / 100
+      p.orders++
+      p.captada += value
+      if (PAID_STATUSES.has(detail.status)) { p.paidOrders++; p.paga += value }
+    }
+    const byPaymentState = Array.from(paymentStateMap.entries())
+      .map(([key, v]) => {
+        const [state, method] = key.split('|')
+        return { state, method, orders: v.orders, paidOrders: v.paidOrders, captada: Math.round(v.captada * 100) / 100, paga: Math.round(v.paga * 100) / 100 }
+      })
+      .sort((a, b) => a.state.localeCompare(b.state) || b.paga - a.paga)
+
     // 3. Agrupa por email
     const byEmail = new Map<string, {
       name: string; phone: string; orderCount: number
@@ -415,6 +436,7 @@ export async function GET(req: NextRequest) {
       customers,
       regionData,
       byPayment,
+      byPaymentState,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'

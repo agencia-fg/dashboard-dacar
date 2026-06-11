@@ -58,7 +58,8 @@ interface VendasCustomer {
 }
 interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number; orders: number; paidOrders: number; paidVolumeL: number; avgTicket: number; avgPaidTicket: number }
 interface PaymentRow { method: string; orders: number; paidOrders: number; captada: number; paga: number }
-interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[]; byPayment?: PaymentRow[] }
+interface PaymentStateRow { state: string; method: string; orders: number; paidOrders: number; captada: number; paga: number }
+interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[]; byPayment?: PaymentRow[]; byPaymentState?: PaymentStateRow[] }
 
 interface SKURow { name: string; orders: number; unitsSold: number; revenue: number; volumeL: number }
 interface ProductsData { skus: SKURow[]; totalRevenue: number; totalVolumeL: number; totalOrders: number; dateFrom: string; dateTo: string }
@@ -830,6 +831,52 @@ export default function Dashboard() {
                     </table>
                   </div>
                 </div>
+
+                {/* Meios de Pagamento por Estado */}
+                {(vendas.byPaymentState?.length ?? 0) > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-4">Meios de Pagamento por Estado</h2>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
+                            <th className="pb-2 pr-4">Estado</th>
+                            <th className="pb-2 pr-4">Meio</th>
+                            <th className="pb-2 pr-4 text-center">Pedidos</th>
+                            <th className="pb-2 pr-4 text-center">Ped. Pagos</th>
+                            <th className="pb-2 pr-4">Captado</th>
+                            <th className="pb-2 pr-4">Faturado</th>
+                            <th className="pb-2">% Conversão</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-800">
+                          {vendas.byPaymentState!.map((p, i) => {
+                            const convPct = p.captada > 0 ? (p.paga / p.captada * 100) : 0
+                            const isFirstOfState = i === 0 || vendas.byPaymentState![i - 1].state !== p.state
+                            return (
+                              <tr key={`${p.state}-${p.method}`} className="hover:bg-gray-800/50 transition-colors">
+                                <td className="py-2 pr-4 text-gray-200 font-medium">{isFirstOfState ? p.state : ''}</td>
+                                <td className="py-2 pr-4 text-gray-300">{p.method}</td>
+                                <td className="py-2 pr-4 text-center text-gray-300">{p.orders}</td>
+                                <td className="py-2 pr-4 text-center text-gray-300">{p.paidOrders}</td>
+                                <td className="py-2 pr-4 text-gray-300">{fmt(p.captada)}</td>
+                                <td className="py-2 pr-4 text-green-400 font-medium">{p.paga > 0 ? fmt(p.paga) : '—'}</td>
+                                <td className="py-2">
+                                  <span className={`text-xs font-semibold ${convPct >= 80 ? 'text-green-400' : convPct >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                    {convPct.toFixed(1)}%
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {vendas.summary.isSample && (
+                      <p className="text-xs text-gray-600 mt-3">Baseado na amostra de {vendas.summary.sampleSize} pedidos (detalhe com endereço).</p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </>
