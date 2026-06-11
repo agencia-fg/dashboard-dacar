@@ -152,7 +152,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'purchased' | 'not_purchased'>('all')
+  const [filterStatus, setFilterStatus] = useState<string>('all')
 
   // Vendas tab
   const [vendas, setVendas] = useState<VendasData | null>(null)
