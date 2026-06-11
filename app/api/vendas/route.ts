@@ -26,6 +26,7 @@ interface OrderListItem {
   totalValue: number
   creationDate: string
   status: string
+  paymentNames?: string | null
 }
 
 interface MarketingData {
@@ -212,6 +213,30 @@ export async function GET(req: NextRequest) {
       .filter(o => PAID_STATUSES.has(o.status))
       .reduce((s, o) => s + (o.totalValue ?? 0) / 100, 0)
 
+    // 1b. Agregação macro por meio de pagamento (todos os pedidos do período)
+    const byPaymentMap = new Map<string, { orders: number; paidOrders: number; captada: number; paga: number }>()
+    for (const o of orders) {
+      const method = o.paymentNames?.trim() || 'Não informado'
+      if (!byPaymentMap.has(method)) byPaymentMap.set(method, { orders: 0, paidOrders: 0, captada: 0, paga: 0 })
+      const p = byPaymentMap.get(method)!
+      const value = (o.totalValue ?? 0) / 100
+      p.orders++
+      p.captada += value
+      if (PAID_STATUSES.has(o.status)) { p.paidOrders++; p.paga += value }
+    }
+    const byPayment = Array.from(byPaymentMap.entries())
+      .map(([method, v]) => ({
+        method,
+        orders: v.orders,
+        paidOrders: v.paidOrders,
+        captada: Math.round(v.captada * 100) / 100,
+        paga: Math.round(v.paga * 100) / 100,
+      }))
+      .sort((a, b) => b.paga - a.paga)
+
+    // Mapa orderId → meio de pagamento (para vincular ao cliente nos detalhes)
+    const paymentByOrderId = new Map(orders.map(o => [o.orderId, o.paymentNames?.trim() || 'Não informado']))
+
     // 2. Pega detalhes (limitado a 300)
     const sampleOrders = orders.slice(0, 300)
     const details = await batchProcess(sampleOrders, 15, (o) => fetchOrderDetail(o.orderId))
@@ -224,6 +249,7 @@ export async function GET(req: NextRequest) {
       lastUtm: MarketingData | null
       city: string | null; state: string | null
       paidVolumeL: number  // apenas pedidos pagos, Kg já convertido para L
+      paymentMethods: Set<string>
     }>()
 
     for (const detail of details) {
@@ -247,9 +273,11 @@ export async function GET(req: NextRequest) {
       }
 
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state, paidVolumeL: 0 })
+        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state, paidVolumeL: 0, paymentMethods: new Set() })
       }
       const entry = byEmail.get(email)!
+      const payMethod = paymentByOrderId.get(detail.orderId)
+      if (payMethod && payMethod !== 'Não informado') entry.paymentMethods.add(payMethod)
       if (!entry.phone && phone) entry.phone = phone
       if (!entry.city && city) entry.city = city
       if (!entry.state && state) entry.state = state
@@ -322,6 +350,7 @@ export async function GET(req: NextRequest) {
         state: info.state ?? enrich?.profile?.state ?? null,
         approved: enrich?.profile?.approved ?? null,
         lastInteractionIn: enrich?.profile?.lastInteractionIn ?? null,
+        paymentMethods: Array.from(info.paymentMethods),
         utmSource: utm?.utmSource ?? null,
         utmMedium: utm?.utmMedium ?? null,
         utmCampaign: utm?.utmCampaign ?? null,
@@ -385,6 +414,7 @@ export async function GET(req: NextRequest) {
       },
       customers,
       regionData,
+      byPayment,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'

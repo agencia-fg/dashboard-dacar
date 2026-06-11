@@ -54,9 +54,11 @@ interface VendasCustomer {
   cnpj: string | null; corporateName: string | null; tradeName: string | null
   city: string | null; state: string | null; approved: boolean | null
   paidVolumeL: number
+  paymentMethods?: string[]
 }
 interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number; orders: number; paidOrders: number; paidVolumeL: number; avgTicket: number; avgPaidTicket: number }
-interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[] }
+interface PaymentRow { method: string; orders: number; paidOrders: number; captada: number; paga: number }
+interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[]; byPayment?: PaymentRow[] }
 
 interface SKURow { name: string; orders: number; unitsSold: number; revenue: number; volumeL: number }
 interface ProductsData { skus: SKURow[]; totalRevenue: number; totalVolumeL: number; totalOrders: number; dateFrom: string; dateTo: string }
@@ -85,6 +87,7 @@ const VENDAS_COLUMNS: ColDef[] = [
   { key: 'totalSpent',          label: 'Captado',       sortKey: 'totalSpent' },
   { key: 'paidSpent',           label: 'Pago',          sortKey: 'paidSpent' },
   { key: 'paidVolumeL',         label: 'Volume Faturado (L)', sortKey: 'paidVolumeL' },
+  { key: 'paymentMethods',      label: 'Pagamento',     sortKey: null },
   { key: 'utmSource',           label: 'UTM Source',    sortKey: null },
   { key: 'utmMedium',           label: 'UTM Medium',    sortKey: null },
   { key: 'utmCampaign',         label: 'UTM Campaign',  sortKey: null },
@@ -127,6 +130,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
     'Captado (R$)': c.totalSpent,
     'Pago (R$)': c.paidSpent,
     'Volume Faturado (L)': (c.paidVolumeL ?? 0) > 0 ? c.paidVolumeL : '',
+    'Meios de Pagamento': c.paymentMethods?.join(', ') ?? '',
     'UTM Source': c.utmSource ?? '',
     'UTM Medium': c.utmMedium ?? '',
     'UTM Campaign': c.utmCampaign ?? '',
@@ -486,6 +490,15 @@ export default function Dashboard() {
         <td key={col.key} className="py-2 pr-3 text-center">
           {(c.paidVolumeL ?? 0) > 0
             ? <span className="font-medium text-cyan-400">{c.paidVolumeL.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} L</span>
+            : <span className="text-gray-600">—</span>}
+        </td>
+      )
+      case 'paymentMethods': return (
+        <td key={col.key} className="py-2 pr-3">
+          {(c.paymentMethods?.length ?? 0) > 0
+            ? <div className="flex flex-wrap gap-1">{c.paymentMethods!.map(m => (
+                <span key={m} className="px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-xs text-gray-300 whitespace-nowrap">{m}</span>
+              ))}</div>
             : <span className="text-gray-600">—</span>}
         </td>
       )
@@ -946,6 +959,56 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </div>
+
+                {/* Meios de Pagamento */}
+                {(vendas.byPayment?.length ?? 0) > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-4">Meios de Pagamento</h2>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
+                            <th className="pb-2 pr-4">Meio</th>
+                            <th className="pb-2 pr-4 text-center">Pedidos</th>
+                            <th className="pb-2 pr-4 text-center">Ped. Pagos</th>
+                            <th className="pb-2 pr-4">Captado</th>
+                            <th className="pb-2 pr-4">Faturado</th>
+                            <th className="pb-2 pr-4">% Conversão</th>
+                            <th className="pb-2">% do Faturado</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-800">
+                          {vendas.byPayment!.map(p => {
+                            const convPct = p.captada > 0 ? (p.paga / p.captada * 100) : 0
+                            const sharePct = vendas.summary.totalRevenuePaga > 0 ? (p.paga / vendas.summary.totalRevenuePaga * 100) : 0
+                            return (
+                              <tr key={p.method} className="hover:bg-gray-800/50 transition-colors">
+                                <td className="py-2 pr-4 text-gray-200">{p.method}</td>
+                                <td className="py-2 pr-4 text-center text-gray-300">{p.orders}</td>
+                                <td className="py-2 pr-4 text-center text-gray-300">{p.paidOrders}</td>
+                                <td className="py-2 pr-4 text-gray-300">{fmt(p.captada)}</td>
+                                <td className="py-2 pr-4 text-green-400 font-medium">{fmt(p.paga)}</td>
+                                <td className="py-2 pr-4">
+                                  <span className={`text-xs font-semibold ${convPct >= 80 ? 'text-green-400' : convPct >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                    {convPct.toFixed(1)}%
+                                  </span>
+                                </td>
+                                <td className="py-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-24 bg-gray-800 rounded-full h-1.5">
+                                      <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${Math.min(sharePct, 100).toFixed(0)}%` }} />
+                                    </div>
+                                    <span className="text-xs text-gray-400">{sharePct.toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* Tabela clientes */}
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
