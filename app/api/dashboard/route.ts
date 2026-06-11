@@ -55,6 +55,9 @@ export async function GET(req: NextRequest) {
     const enriched = customers.map((c) => {
       const customerOrders = ordersByEmail.get(c.email?.toLowerCase()) ?? []
       const totalSpent = customerOrders.reduce((sum, o) => sum + (o.totalValue ?? o.value ?? 0) / 100, 0)
+      const paidSpent = customerOrders
+        .filter(o => PAID_STATUSES.has(o.status))
+        .reduce((sum, o) => sum + (o.totalValue ?? o.value ?? 0) / 100, 0)
       const firstPurchaseDate =
         customerOrders.length > 0
           ? customerOrders.sort(
@@ -67,6 +70,7 @@ export async function GET(req: NextRequest) {
         ...c,
         orders: customerOrders,
         totalSpent,
+        paidSpent,
         firstPurchaseDate,
         purchased: customerOrders.some(o => PAID_STATUSES.has(o.status)),
         funnelStage,
@@ -89,7 +93,8 @@ export async function GET(req: NextRequest) {
         purchasedCount: purchasedCustomers.length,
         neverPurchasedCount: neverPurchased.length,
         conversionRate: parseFloat(conversionRate.toFixed(1)),
-        totalRevenue: purchasedCustomers.reduce((s, c) => s + c.totalSpent, 0),
+        totalRevenue: enriched.reduce((s, c) => s + c.totalSpent, 0),
+        paidRevenue: enriched.reduce((s, c) => s + c.paidSpent, 0),
       },
       byDay,
       customers: enriched.map((c) => ({
@@ -102,6 +107,7 @@ export async function GET(req: NextRequest) {
         purchased: c.purchased,
         orderCount: c.orders.length,
         totalSpent: c.totalSpent,
+        paidSpent: c.paidSpent,
         firstPurchaseDate: c.firstPurchaseDate,
         funnelStage: c.funnelStage,
         lastInteractionIn: c.lastInteractionIn ?? null,

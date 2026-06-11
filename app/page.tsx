@@ -18,12 +18,15 @@ interface Summary {
   neverPurchasedCount: number
   conversionRate: number
   totalRevenue: number
+  paidRevenue?: number
 }
 interface DayData { date: string; registrations: number; purchases: number }
 interface Customer {
   id: string; firstName: string; lastName: string; email: string; phone: string
   createdIn: string; purchased: boolean; orderCount: number; totalSpent: number
+  paidSpent?: number
   firstPurchaseDate: string | null
+  funnelStage?: string
 }
 interface DashboardData { summary: Summary; byDay: DayData[]; customers: Customer[] }
 
@@ -533,12 +536,13 @@ export default function Dashboard() {
           <>
             {error && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{error}</div>}
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               <KpiCard icon={<Users size={20} />} label="Total de Cadastros" value={data?.summary.totalCustomers ?? '—'} color="blue" />
               <KpiCard icon={<UserCheck size={20} />} label="Cadastros Aprovados" value={data?.summary.approvedCount ?? '—'} sub={data?.summary.approvedCount != null ? `${((data.summary.approvedCount / data.summary.totalCustomers) * 100).toFixed(0)}% do total` : undefined} color="green" />
               <KpiCard icon={<ShoppingCart size={20} />} label="Compraram" value={data?.summary.purchasedCount ?? '—'} sub={data ? `${data.summary.conversionRate}% de conversão` : undefined} color="purple" />
               <KpiCard icon={<TrendingUp size={20} />} label="Não compraram" value={data?.summary.neverPurchasedCount ?? '—'} sub={data ? `${(100 - data.summary.conversionRate).toFixed(1)}% do total` : undefined} color="red" />
-              <KpiCard icon={<DollarSign size={20} />} label="Receita no Período" value={data ? fmt(data.summary.totalRevenue) : '—'} color="yellow" />
+              <KpiCard icon={<DollarSign size={20} />} label="Receita Captada" value={data ? fmt(data.summary.totalRevenue) : '—'} sub="todos os pedidos" color="yellow" />
+              <KpiCard icon={<DollarSign size={20} />} label="Receita Paga" value={data?.summary.paidRevenue != null ? fmt(data.summary.paidRevenue) : '—'} sub="pagamento confirmado" color="green" />
             </div>
 
             {/* Funil — onde os não-compradores travaram */}
@@ -690,7 +694,7 @@ export default function Dashboard() {
                       <th className="pb-2 pr-4">Nome</th><th className="pb-2 pr-4">E-mail</th>
                       <th className="pb-2 pr-4">Telefone</th><th className="pb-2 pr-4">Cadastro</th>
                       <th className="pb-2 pr-4">Status</th><th className="pb-2 pr-4">Pedidos</th>
-                      <th className="pb-2 pr-4">Total gasto</th><th className="pb-2">1ª Compra</th>
+                      <th className="pb-2 pr-4">Captado</th><th className="pb-2 pr-4">Pago</th><th className="pb-2">1ª Compra</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
@@ -716,6 +720,7 @@ export default function Dashboard() {
                         </td>
                         <td className="py-2 pr-4 text-center text-gray-300">{c.orderCount}</td>
                         <td className="py-2 pr-4 text-gray-300">{c.totalSpent > 0 ? fmt(c.totalSpent) : '—'}</td>
+                        <td className="py-2 pr-4 text-green-400">{(c.paidSpent ?? 0) > 0 ? fmt(c.paidSpent!) : '—'}</td>
                         <td className="py-2 text-gray-400">{c.firstPurchaseDate ? fmtDate(c.firstPurchaseDate) : '—'}</td>
                       </tr>
                     ))}
