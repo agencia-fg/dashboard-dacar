@@ -554,8 +554,8 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               <KpiCard icon={<Users size={20} />} label="Total de Cadastros" value={data?.summary.totalCustomers ?? '—'} color="blue" />
               <KpiCard icon={<UserCheck size={20} />} label="Cadastros Aprovados" value={data?.summary.approvedCount ?? '—'} sub={data?.summary.approvedCount != null ? `${((data.summary.approvedCount / data.summary.totalCustomers) * 100).toFixed(0)}% do total` : undefined} color="green" />
-              <KpiCard icon={<ShoppingCart size={20} />} label="Compraram" value={data?.summary.purchasedCount ?? '—'} sub={data ? `${data.summary.conversionRate}% de conversão` : undefined} color="purple" />
-              <KpiCard icon={<TrendingUp size={20} />} label="Não compraram" value={data?.summary.neverPurchasedCount ?? '—'} sub={data ? `${(100 - data.summary.conversionRate).toFixed(1)}% do total` : undefined} color="red" />
+              <KpiCard icon={<ShoppingCart size={20} />} label="Compraram" value={data?.summary.purchasedCount ?? '—'} sub={data ? `${data.summary.conversionRate}% dos aprovados` : undefined} color="purple" />
+              <KpiCard icon={<TrendingUp size={20} />} label="Não compraram" value={data?.summary.neverPurchasedCount ?? '—'} sub={data ? `${(100 - data.summary.conversionRate).toFixed(1)}% dos aprovados` : undefined} color="red" />
               <KpiCard icon={<DollarSign size={20} />} label="Receita Captada" value={data ? fmt(data.summary.totalRevenue) : '—'} sub="todos os pedidos" color="yellow" />
               <KpiCard icon={<DollarSign size={20} />} label="Receita Paga" value={data?.summary.paidRevenue != null ? fmt(data.summary.paidRevenue) : '—'} sub="pagamento confirmado" color="green" />
             </div>

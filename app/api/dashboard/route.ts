@@ -78,11 +78,13 @@ export async function GET(req: NextRequest) {
     })
 
     const totalCustomers = enriched.length
-    const purchasedCustomers = enriched.filter((c) => c.purchased)
-    const neverPurchased = enriched.filter((c) => !c.purchased)
-    const approvedCustomers = customers.filter((c) => c.approved === true)
+    const approvedEnriched = enriched.filter((c) => c.approved === true)
+    // Compraram / Não compraram / conversão: sempre sobre os APROVADOS
+    const purchasedCustomers = approvedEnriched.filter((c) => c.purchased)
+    const neverPurchased = approvedEnriched.filter((c) => !c.purchased)
+    const approvedCustomers = approvedEnriched
     const conversionRate =
-      totalCustomers > 0 ? (purchasedCustomers.length / totalCustomers) * 100 : 0
+      approvedEnriched.length > 0 ? (purchasedCustomers.length / approvedEnriched.length) * 100 : 0
 
     const byDay = buildDailyMap(enriched, dateFrom, dateTo)
 
