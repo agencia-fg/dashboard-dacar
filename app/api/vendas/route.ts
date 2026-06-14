@@ -117,6 +117,20 @@ interface CustomerProfile {
   state: string | null
   approved: boolean | null
   lastInteractionIn: string | null
+  cnae: string | null
+}
+
+// Classifica VAREJO/CONSTRUTORA a partir do CNAE (não há campo manual no cadastro)
+// Divisão (2 primeiros dígitos): 41/42/43 = Construção → Construtora
+// 45/46/47 = Comércio → Varejo; demais → Outros
+function classifyByCnae(cnae: string | null): string | null {
+  if (!cnae) return null
+  const digits = cnae.replace(/\D/g, '')
+  if (digits.length < 2) return null
+  const div = digits.slice(0, 2)
+  if (['41', '42', '43'].includes(div)) return 'Construtora'
+  if (['45', '46', '47'].includes(div)) return 'Varejo'
+  return 'Outros'
 }
 
 async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): Promise<{ list: OrderListItem[]; total: number }> {
@@ -171,10 +185,10 @@ async function fetchTotalOrdersByEmail(email: string): Promise<{ total: number; 
 
 async function fetchCustomerProfile(email: string): Promise<CustomerProfile> {
   const realEmail = extractRealEmail(email)
-  const fields = 'createdIn,corporateDocument,corporateName,tradeName,city,state,approved,lastInteractionIn'
+  const fields = 'createdIn,corporateDocument,corporateName,tradeName,city,state,approved,lastInteractionIn,cnae'
   const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=${fields}&email=${encodeURIComponent(realEmail)}`
   const res = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-1' } })
-  if (!res.ok) return { createdIn: null, corporateDocument: null, corporateName: null, tradeName: null, city: null, state: null, approved: null, lastInteractionIn: null }
+  if (!res.ok) return { createdIn: null, corporateDocument: null, corporateName: null, tradeName: null, city: null, state: null, approved: null, lastInteractionIn: null, cnae: null }
   const data = await res.json()
   const r = data?.[0]
   return {
@@ -186,6 +200,7 @@ async function fetchCustomerProfile(email: string): Promise<CustomerProfile> {
     state: r?.state ?? null,
     approved: r?.approved ?? null,
     lastInteractionIn: r?.lastInteractionIn ?? null,
+    cnae: r?.cnae ?? null,
   }
 }
 
@@ -350,6 +365,8 @@ export async function GET(req: NextRequest) {
         daysToPurchase: enrich?.daysToPurchase ?? null,
         avgDaysBetweenOrders: enrich?.avgDaysBetweenOrders ?? null,
         cnpj: enrich?.profile?.corporateDocument ?? null,
+        cnae: enrich?.profile?.cnae ?? null,
+        businessType: classifyByCnae(enrich?.profile?.cnae ?? null),
         corporateName: enrich?.profile?.corporateName ?? null,
         tradeName: enrich?.profile?.tradeName ?? null,
         city: info.city ?? enrich?.profile?.city ?? null,
