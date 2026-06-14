@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { classifyByCnae } from '@/lib/vtex'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -118,19 +119,6 @@ interface CustomerProfile {
   approved: boolean | null
   lastInteractionIn: string | null
   cnae: string | null
-}
-
-// Classifica VAREJO/CONSTRUTORA a partir do CNAE (não há campo manual no cadastro)
-// Divisão (2 primeiros dígitos): 41/42/43 = Construção → Construtora
-// 45/46/47 = Comércio → Varejo; demais → Outros
-function classifyByCnae(cnae: string | null): string | null {
-  if (!cnae) return null
-  const digits = cnae.replace(/\D/g, '')
-  if (digits.length < 2) return null
-  const div = digits.slice(0, 2)
-  if (['41', '42', '43'].includes(div)) return 'Construtora'
-  if (['45', '46', '47'].includes(div)) return 'Varejo'
-  return 'Outros'
 }
 
 async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): Promise<{ list: OrderListItem[]; total: number }> {

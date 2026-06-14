@@ -21,6 +21,20 @@ export interface VtexCustomer {
   corporateDocument?: string | null
   corporateName?: string | null
   tradeName?: string | null
+  cnae?: string | null
+}
+
+// Classifica VAREJO/CONSTRUTORA a partir do CNAE (não há campo manual no cadastro).
+// Divisão (2 primeiros dígitos): 41/42/43 = Construção → Construtora;
+// 45/46/47 = Comércio → Varejo; demais → Outros; sem CNAE → null.
+export function classifyByCnae(cnae: string | null | undefined): string | null {
+  if (!cnae) return null
+  const digits = cnae.replace(/\D/g, '')
+  if (digits.length < 2) return null
+  const div = digits.slice(0, 2)
+  if (['41', '42', '43'].includes(div)) return 'Construtora'
+  if (['45', '46', '47'].includes(div)) return 'Varejo'
+  return 'Outros'
 }
 
 export interface VtexOrder {
@@ -47,7 +61,7 @@ export async function fetchCustomers(
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
-  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=id,email,firstName,lastName,phone,createdIn,userId,approved,lastInteractionIn,corporateDocument,corporateName,tradeName&_where=createdIn%20between%20${dateFrom}T00%3A00%3A00.000Z%20AND%20${dateTo}T23%3A59%3A59.999Z&_sort=createdIn%20DESC`
+  const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=id,email,firstName,lastName,phone,createdIn,userId,approved,lastInteractionIn,corporateDocument,corporateName,tradeName,cnae&_where=createdIn%20between%20${dateFrom}T00%3A00%3A00.000Z%20AND%20${dateTo}T23%3A59%3A59.999Z&_sort=createdIn%20DESC`
 
   const res = await fetch(url, {
     headers: {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchAllCustomers, fetchOrdersForCustomers, VtexCustomer, VtexOrder } from '@/lib/vtex'
+import { fetchAllCustomers, fetchOrdersForCustomers, VtexCustomer, VtexOrder, classifyByCnae } from '@/lib/vtex'
 
 export const dynamic = 'force-dynamic'
 
@@ -117,6 +117,7 @@ export async function GET(req: NextRequest) {
         cnpj: c.corporateDocument ?? null,
         corporateName: c.corporateName ?? null,
         tradeName: c.tradeName ?? null,
+        businessType: classifyByCnae(c.cnae),
       })),
     })
   } catch (err: unknown) {

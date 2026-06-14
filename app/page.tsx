@@ -31,6 +31,7 @@ interface Customer {
   cnpj?: string | null
   corporateName?: string | null
   tradeName?: string | null
+  businessType?: string | null
 }
 interface DashboardData { summary: Summary; byDay: DayData[]; customers: Customer[] }
 
@@ -78,10 +79,11 @@ const VENDAS_COLUMNS: ColDef[] = [
   { key: 'email',               label: 'E-mail',        sortKey: null },
   { key: 'phone',               label: 'Telefone',      sortKey: null },
   { key: 'cnpj',                label: 'CNPJ',          sortKey: null },
+  { key: 'businessType',        label: 'Tipo',          sortKey: null },
   { key: 'tradeName',           label: 'Nome Fantasia', sortKey: 'tradeName' },
   { key: 'state',               label: 'Estado',        sortKey: 'state' },
   { key: 'city',                label: 'Cidade',        sortKey: 'city' },
-  { key: 'isRecurring',         label: 'Tipo',          sortKey: 'isRecurring' },
+  { key: 'isRecurring',         label: 'Recorrência',   sortKey: 'isRecurring' },
   { key: 'registeredAt',        label: 'Cadastro',      sortKey: 'registeredAt' },
   { key: 'firstOrderDate',      label: '1ª Compra',     sortKey: 'firstOrderDate' },
   { key: 'lastOrderDate',       label: 'Última Compra', sortKey: 'lastOrderDate' },
@@ -105,6 +107,17 @@ const fmt = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
 const fmtDate = (iso: string) => format(new Date(iso), 'dd/MM/yyyy', { locale: ptBR })
 
+function BizBadge({ type }: { type?: string | null }) {
+  if (!type) return <span className="text-gray-600 text-xs">—</span>
+  const t = type.toUpperCase()
+  const cls = t.includes('CONSTRU')
+    ? 'bg-orange-900/50 text-orange-300'
+    : t.includes('VAREJO')
+      ? 'bg-sky-900/50 text-sky-300'
+      : 'bg-gray-800 text-gray-400'
+  return <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{type}</span>
+}
+
 function fmtPhone(phone: string): string {
   if (!phone) return '—'
   const digits = phone.replace(/\D/g, '')
@@ -121,11 +134,12 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
     'E-mail': c.email,
     'Telefone': fmtPhone(c.phone),
     'CNPJ': c.cnpj ?? '',
+    'Tipo': c.businessType ?? '',
     'Razão Social': c.corporateName ?? '',
     'Nome Fantasia': c.tradeName ?? '',
     'Cidade': c.city ?? '',
     'Estado': c.state ?? '',
-    'Tipo': c.isRecurring ? 'Recorrente' : 'Novo',
+    'Recorrência': c.isRecurring ? 'Recorrente' : 'Novo',
     'Cadastro': c.registeredAt ? fmtDate(c.registeredAt) : '',
     '1ª Compra': c.firstOrderDate ? fmtDate(c.firstOrderDate) : '',
     'Última Compra': c.lastOrderDate ? fmtDate(c.lastOrderDate) : '',
@@ -464,6 +478,7 @@ export default function Dashboard() {
       case 'email':       return <td key={col.key} className="py-2 pr-3 text-gray-400 max-w-[180px] truncate">{c.email}</td>
       case 'phone':       return <td key={col.key} className="py-2 pr-3 text-gray-400">{fmtPhone(c.phone)}</td>
       case 'cnpj':        return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.cnpj || '—'}</td>
+      case 'businessType': return <td key={col.key} className="py-2 pr-3"><BizBadge type={c.businessType} /></td>
       case 'tradeName':   return <td key={col.key} className="py-2 pr-3 text-gray-300">{c.tradeName || c.corporateName || '—'}</td>
       case 'state':       return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.state || '—'}</td>
       case 'city':        return <td key={col.key} className="py-2 pr-3 text-gray-400">{c.city || '—'}</td>
@@ -737,6 +752,7 @@ export default function Dashboard() {
                   <thead>
                     <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
                       <th className="pb-2 pr-4">Nome</th><th className="pb-2 pr-4">Empresa</th>
+                      <th className="pb-2 pr-4">Tipo</th>
                       <th className="pb-2 pr-4">CNPJ</th><th className="pb-2 pr-4">E-mail</th>
                       <th className="pb-2 pr-4">Telefone</th><th className="pb-2 pr-4">Cadastro</th>
                       <th className="pb-2 pr-4">Status</th><th className="pb-2 pr-4">Pedidos</th>
@@ -748,6 +764,7 @@ export default function Dashboard() {
                       <tr key={c.id} className="hover:bg-gray-800/50 transition-colors">
                         <td className="py-2 pr-4 text-gray-200">{c.firstName} {c.lastName}</td>
                         <td className="py-2 pr-4 text-gray-300">{c.tradeName || c.corporateName || '—'}</td>
+                        <td className="py-2 pr-4"><BizBadge type={c.businessType} /></td>
                         <td className="py-2 pr-4 text-gray-400">{c.cnpj || '—'}</td>
                         <td className="py-2 pr-4 text-gray-400">{c.email}</td>
                         <td className="py-2 pr-4 text-gray-400">{fmtPhone(c.phone)}</td>
@@ -1578,13 +1595,11 @@ export default function Dashboard() {
                                   <td className="py-2 pr-4">
                                     <div className="text-gray-200 font-medium">{c2.name || c2.email}</div>
                                     {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
+                                    <div className="text-gray-500 text-xs">{c2.email}</div>
+                                    {c2.phone && <div className="text-gray-600 text-xs">{fmtPhone(c2.phone)}</div>}
                                   </td>
                                   <td className="py-2 pr-4 text-gray-400 text-xs">{c2.cnpj ?? '—'}</td>
-                                  <td className="py-2 pr-4">
-                                    {c2.businessType
-                                      ? <span className={`px-2 py-0.5 rounded text-xs font-medium ${c2.businessType.toUpperCase().includes('CONSTRU') ? 'bg-orange-900/50 text-orange-300' : 'bg-sky-900/50 text-sky-300'}`}>{c2.businessType}</span>
-                                      : <span className="text-gray-600 text-xs">—</span>}
-                                  </td>
+                                  <td className="py-2 pr-4"><BizBadge type={c2.businessType} /></td>
                                   <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
                                   <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
                                   <td className="py-2 pr-4 text-right text-gray-300">{c2.totalAllTime}</td>
@@ -1613,6 +1628,8 @@ export default function Dashboard() {
                           <thead>
                             <tr className="text-gray-400 border-b border-gray-700 text-xs">
                               <th className="pb-2 pr-4">Cliente</th>
+                              <th className="pb-2 pr-4">CNPJ</th>
+                              <th className="pb-2 pr-4">Tipo</th>
                               <th className="pb-2 pr-4">Estado</th>
                               <th className="pb-2 pr-4 text-right">1ª Compra</th>
                               <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
@@ -1625,7 +1642,11 @@ export default function Dashboard() {
                                 <td className="py-2 pr-4">
                                   <div className="text-gray-300 font-medium">{c2.name || c2.email}</div>
                                   {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
+                                  <div className="text-gray-500 text-xs">{c2.email}</div>
+                                  {c2.phone && <div className="text-gray-600 text-xs">{fmtPhone(c2.phone)}</div>}
                                 </td>
+                                <td className="py-2 pr-4 text-gray-400 text-xs">{c2.cnpj ?? '—'}</td>
+                                <td className="py-2 pr-4"><BizBadge type={c2.businessType} /></td>
                                 <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
                                 <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
                                 <td className="py-2 pr-4 text-right text-white font-medium">{fmt(c2.paidSpent)}</td>
