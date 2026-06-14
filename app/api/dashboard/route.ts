@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
         firstName: c.firstName,
         lastName: c.lastName,
         email: c.email,
-        phone: c.phone,
+        phone: c.phone || c.celular || c.homePhone || c.businessPhone || '',
         createdIn: c.createdIn,
         purchased: c.purchased,
         orderCount: c.orders.length,
