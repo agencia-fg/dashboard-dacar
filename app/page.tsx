@@ -7,7 +7,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, FunnelChart, Funnel, LabelList, PieChart, Pie, Cell,
 } from 'recharts'
-import { Users, ShoppingCart, TrendingUp, DollarSign, RefreshCw, Search, Repeat2, UserCheck, Download, SlidersHorizontal } from 'lucide-react'
+import { Users, ShoppingCart, TrendingUp, DollarSign, RefreshCw, Search, Repeat2, UserCheck, Download, SlidersHorizontal, MessageCircle, Mail } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -118,6 +118,21 @@ function BizBadge({ type }: { type?: string | null }) {
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{type}</span>
 }
 
+// Normaliza telefone para formato wa.me (dígitos com DDI 55)
+function waDigits(phone?: string | null): string | null {
+  const d = (phone ?? '').replace(/\D/g, '')
+  if (!d) return null
+  if (d.startsWith('55') && d.length >= 12) return d
+  if (d.length === 10 || d.length === 11) return '55' + d
+  return d.startsWith('55') ? d : '55' + d
+}
+
+// Substitui {nome} e {empresa} no template da mensagem
+function fillTemplate(tpl: string, nome?: string | null, empresa?: string | null): string {
+  const primeiroNome = (nome ?? '').trim().split(' ')[0] || 'tudo bem'
+  return tpl.replace(/\{nome\}/gi, primeiroNome).replace(/\{empresa\}/gi, (empresa ?? '').trim() || primeiroNome)
+}
+
 function fmtPhone(phone: string): string {
   if (!phone) return '—'
   const digits = phone.replace(/\D/g, '')
@@ -173,6 +188,10 @@ export default function Dashboard() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [showCrmPanel, setShowCrmPanel] = useState(false)
+  const [crmMessage, setCrmMessage] = useState(
+    'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Vi que você se cadastrou com a gente mas ainda não fez seu primeiro pedido. Posso te ajudar com alguma dúvida ou indicar o produto ideal pra sua necessidade?'
+  )
 
   // Vendas tab
   const [vendas, setVendas] = useState<VendasData | null>(null)
@@ -731,7 +750,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
-                    <input placeholder="Buscar por nome ou e-mail" value={search} onChange={(e) => setSearch(e.target.value)}
+                    <input placeholder="Buscar nome, e-mail ou CNPJ" value={search} onChange={(e) => setSearch(e.target.value)}
                       className="bg-gray-800 border border-gray-700 rounded pl-8 pr-3 py-1.5 text-sm text-gray-200 w-64" />
                   </div>
                   <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as typeof filterStatus)}
@@ -745,8 +764,43 @@ export default function Dashboard() {
                     <option value="Só cadastrou">Só cadastrou</option>
                     <option value="reprovado">Reprovados</option>
                   </select>
+                  <button onClick={() => setShowCrmPanel(v => !v)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${showCrmPanel ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
+                    <MessageCircle size={13} /> Mensagem
+                  </button>
+                  <button onClick={() => {
+                    const rows = filteredCustomers.map(c => ({
+                      'Nome': `${c.firstName} ${c.lastName}`.trim(),
+                      'Empresa': c.tradeName || c.corporateName || '',
+                      'Tipo': c.businessType ?? '',
+                      'CNPJ': c.cnpj ?? '',
+                      'E-mail': c.email ?? '',
+                      'Telefone': c.phone ?? '',
+                      'Etapa': c.funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou'),
+                      'Aprovado': c.approved === true ? 'Sim' : 'Não',
+                      'Cadastro': c.createdIn ? fmtDate(c.createdIn) : '',
+                    }))
+                    const ws = XLSX.utils.json_to_sheet(rows)
+                    const wb = XLSX.utils.book_new()
+                    XLSX.utils.book_append_sheet(wb, ws, 'Segmento')
+                    XLSX.writeFile(wb, `dacar-segmento-${filterStatus}.xlsx`)
+                  }} className="flex items-center gap-1.5 bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors">
+                    <Download size={13} /> Exportar segmento
+                  </button>
                 </div>
               </div>
+
+              {showCrmPanel && (
+                <div className="mb-4 p-3 bg-gray-800/60 border border-gray-700/60 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-gray-300">Mensagem (usada nos botões de WhatsApp e e-mail)</label>
+                    <span className="text-xs text-gray-500">Use <code className="text-blue-400">{'{nome}'}</code> e <code className="text-blue-400">{'{empresa}'}</code> — são preenchidos por cliente</span>
+                  </div>
+                  <textarea value={crmMessage} onChange={(e) => setCrmMessage(e.target.value)} rows={3}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 resize-y" />
+                  <p className="text-xs text-gray-500 mt-2">💡 O botão abre o WhatsApp/e-mail com a mensagem pronta — você revisa e clica enviar. Nada é disparado automaticamente.</p>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -756,7 +810,8 @@ export default function Dashboard() {
                       <th className="pb-2 pr-4">CNPJ</th><th className="pb-2 pr-4">E-mail</th>
                       <th className="pb-2 pr-4">Telefone</th><th className="pb-2 pr-4">Cadastro</th>
                       <th className="pb-2 pr-4">Status</th><th className="pb-2 pr-4">Pedidos</th>
-                      <th className="pb-2 pr-4">Captado</th><th className="pb-2 pr-4">Pago</th><th className="pb-2">1ª Compra</th>
+                      <th className="pb-2 pr-4">Captado</th><th className="pb-2 pr-4">Pago</th><th className="pb-2 pr-4">1ª Compra</th>
+                      <th className="pb-2">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
@@ -793,7 +848,32 @@ export default function Dashboard() {
                         <td className="py-2 pr-4 text-center text-gray-300">{c.orderCount}</td>
                         <td className="py-2 pr-4 text-gray-300">{c.totalSpent > 0 ? fmt(c.totalSpent) : '—'}</td>
                         <td className="py-2 pr-4 text-green-400">{(c.paidSpent ?? 0) > 0 ? fmt(c.paidSpent!) : '—'}</td>
-                        <td className="py-2 text-gray-400">{c.firstPurchaseDate ? fmtDate(c.firstPurchaseDate) : '—'}</td>
+                        <td className="py-2 pr-4 text-gray-400">{c.firstPurchaseDate ? fmtDate(c.firstPurchaseDate) : '—'}</td>
+                        <td className="py-2">
+                          {(() => {
+                            const empresa = c.tradeName || c.corporateName || ''
+                            const msg = fillTemplate(crmMessage, c.firstName, empresa)
+                            const wa = waDigits(c.phone)
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                {wa
+                                  ? <a href={`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer"
+                                      title="Abrir WhatsApp com mensagem pronta"
+                                      className="inline-flex items-center justify-center w-7 h-7 rounded bg-green-900/40 text-green-400 hover:bg-green-800/60 transition-colors">
+                                      <MessageCircle size={14} />
+                                    </a>
+                                  : <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-gray-800 text-gray-700" title="Sem telefone"><MessageCircle size={14} /></span>}
+                                {c.email
+                                  ? <a href={`mailto:${c.email}?subject=${encodeURIComponent('Dacar Tintas')}&body=${encodeURIComponent(msg)}`}
+                                      title="Abrir e-mail com mensagem pronta"
+                                      className="inline-flex items-center justify-center w-7 h-7 rounded bg-blue-900/40 text-blue-400 hover:bg-blue-800/60 transition-colors">
+                                      <Mail size={14} />
+                                    </a>
+                                  : <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-gray-800 text-gray-700" title="Sem e-mail"><Mail size={14} /></span>}
+                              </div>
+                            )
+                          })()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
