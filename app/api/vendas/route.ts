@@ -243,7 +243,7 @@ export async function GET(req: NextRequest) {
 
     // 3. Agrupa por email
     const byEmail = new Map<string, {
-      name: string; phone: string; orderCount: number
+      name: string; phone: string; orderCount: number; paidOrderCount: number
       totalSpent: number; paidSpent: number
       firstOrderDate: string; lastOrderDate: string
       lastUtm: MarketingData | null
@@ -273,11 +273,12 @@ export async function GET(req: NextRequest) {
       }
 
       if (!byEmail.has(email)) {
-        byEmail.set(email, { name, phone, orderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state, paidVolumeL: 0, paymentMethods: new Set() })
+        byEmail.set(email, { name, phone, orderCount: 0, paidOrderCount: 0, totalSpent: 0, paidSpent: 0, firstOrderDate: orderDate, lastOrderDate: orderDate, lastUtm: null, city, state, paidVolumeL: 0, paymentMethods: new Set() })
       }
       const entry = byEmail.get(email)!
       const payMethod = paymentByOrderId.get(detail.orderId)
-      if (payMethod && payMethod !== 'Não informado') entry.paymentMethods.add(payMethod)
+      // Meio de pagamento só conta se o pedido foi pago
+      if (isPaid && payMethod && payMethod !== 'Não informado') entry.paymentMethods.add(payMethod)
       if (!entry.phone && phone) entry.phone = phone
       if (!entry.city && city) entry.city = city
       if (!entry.state && state) entry.state = state
@@ -288,7 +289,11 @@ export async function GET(req: NextRequest) {
       }
       entry.orderCount++
       entry.totalSpent += (detail.value ?? 0) / 100
-      if (isPaid) entry.paidSpent += (detail.value ?? 0) / 100
+      if (isPaid) {
+        entry.paidOrderCount++
+        entry.paidSpent += (detail.value ?? 0) / 100
+      }
+      // Volume só de pedidos pagos (cancelados/pendentes não contam)
       entry.paidVolumeL += orderVolumeL
     }
 
@@ -333,6 +338,7 @@ export async function GET(req: NextRequest) {
         name: info.name,
         phone: info.phone,
         ordersInPeriod: info.orderCount,
+        paidOrdersInPeriod: info.paidOrderCount,
         totalSpent: info.totalSpent,
         paidSpent: info.paidSpent,
         firstOrderDate: enrich?.firstOrderDateAllTime ?? info.firstOrderDate,
@@ -373,7 +379,7 @@ export async function GET(req: NextRequest) {
       e.revenue += c.totalSpent
       e.paidRevenue += c.paidSpent
       e.orders += c.ordersInPeriod
-      e.paidOrders += c.paidSpent > 0 ? c.ordersInPeriod : 0
+      e.paidOrders += c.paidOrdersInPeriod
       e.paidVolumeL += c.paidVolumeL
     }
     const regionData = Array.from(byState.entries())

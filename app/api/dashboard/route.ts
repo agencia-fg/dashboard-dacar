@@ -114,6 +114,9 @@ export async function GET(req: NextRequest) {
         funnelStage: c.funnelStage,
         lastInteractionIn: c.lastInteractionIn ?? null,
         approved: c.approved ?? null,
+        cnpj: c.corporateDocument ?? null,
+        corporateName: c.corporateName ?? null,
+        tradeName: c.tradeName ?? null,
       })),
     })
   } catch (err: unknown) {

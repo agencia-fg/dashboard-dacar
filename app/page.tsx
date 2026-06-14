@@ -28,6 +28,9 @@ interface Customer {
   firstPurchaseDate: string | null
   funnelStage?: string
   approved?: boolean | null
+  cnpj?: string | null
+  corporateName?: string | null
+  tradeName?: string | null
 }
 interface DashboardData { summary: Summary; byDay: DayData[]; customers: Customer[] }
 
@@ -48,7 +51,8 @@ interface VendasSummary {
   totalPaidVolumeL: number; recurringPaidVolumeL: number; newPaidVolumeL: number
 }
 interface VendasCustomer {
-  email: string; name: string; phone: string; ordersInPeriod: number; totalSpent: number; paidSpent: number
+  email: string; name: string; phone: string; ordersInPeriod: number; paidOrdersInPeriod: number; totalSpent: number; paidSpent: number
+  businessType?: string | null
   firstOrderDate: string; lastOrderDate: string; totalAllTime: number; isRecurring: boolean; ordersBeforePeriod: number
   registeredAt: string | null; daysToPurchase: number | null; avgDaysBetweenOrders: number | null
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null
@@ -82,7 +86,8 @@ const VENDAS_COLUMNS: ColDef[] = [
   { key: 'firstOrderDate',      label: '1ª Compra',     sortKey: 'firstOrderDate' },
   { key: 'lastOrderDate',       label: 'Última Compra', sortKey: 'lastOrderDate' },
   { key: 'daysToPurchase',      label: '→Compra',       sortKey: 'daysToPurchase' },
-  { key: 'ordersInPeriod',      label: 'Ped.',          sortKey: 'ordersInPeriod' },
+  { key: 'ordersInPeriod',      label: 'Ped. Captados', sortKey: 'ordersInPeriod' },
+  { key: 'paidOrdersInPeriod',  label: 'Ped. Pagos',    sortKey: 'paidOrdersInPeriod' },
   { key: 'totalAllTime',        label: 'Hist.',         sortKey: 'totalAllTime' },
   { key: 'avgDaysBetweenOrders',label: 'Freq. média',   sortKey: 'avgDaysBetweenOrders' },
   { key: 'totalSpent',          label: 'Captado',       sortKey: 'totalSpent' },
@@ -126,7 +131,8 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
     'Última Compra': c.lastOrderDate ? fmtDate(c.lastOrderDate) : '',
     'Dias Cad.→Compra': c.daysToPurchase ?? '',
     'Freq. Média (dias)': c.avgDaysBetweenOrders ?? '',
-    'Ped. Período': c.ordersInPeriod,
+    'Ped. Captados': c.ordersInPeriod,
+    'Ped. Pagos': c.paidOrdersInPeriod,
     'Total Histórico': c.totalAllTime,
     'Captado (R$)': c.totalSpent,
     'Pago (R$)': c.paidSpent,
@@ -179,6 +185,12 @@ export default function Dashboard() {
   const [vendasChurn, setVendasChurn] = useState<VendasData | null>(null)
   const [vendasChurnLoading, setVendasChurnLoading] = useState(false)
   const [vendasChurnError, setVendasChurnError] = useState('')
+  const [churnSortKey, setChurnSortKey] = useState<'dias' | 'receita'>('dias')
+  const [churnSortDir, setChurnSortDir] = useState<'asc' | 'desc'>('desc')
+  const toggleChurnSort = (k: 'dias' | 'receita') => {
+    if (churnSortKey === k) setChurnSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setChurnSortKey(k); setChurnSortDir('desc') }
+  }
   const CHURN_MONTHS = 6
   const churnDateTo   = new Date().toISOString().slice(0, 10)
   const churnDateFrom = (() => { const d = new Date(); d.setMonth(d.getMonth() - CHURN_MONTHS); return d.toISOString().slice(0, 10) })()
@@ -348,8 +360,11 @@ export default function Dashboard() {
   }
 
   const filteredCustomers = (data?.customers ?? []).filter((c) => {
-    const matchSearch = search === '' || c.email?.toLowerCase().includes(search.toLowerCase()) ||
-      c.firstName?.toLowerCase().includes(search.toLowerCase()) || c.lastName?.toLowerCase().includes(search.toLowerCase())
+    const q = search.toLowerCase()
+    const matchSearch = search === '' || c.email?.toLowerCase().includes(q) ||
+      c.firstName?.toLowerCase().includes(q) || c.lastName?.toLowerCase().includes(q) ||
+      (c.cnpj ?? '').toLowerCase().includes(q) ||
+      (c.corporateName ?? '').toLowerCase().includes(q) || (c.tradeName ?? '').toLowerCase().includes(q)
     const stage = c.funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
     const matchStatus = filterStatus === 'all'
       || (filterStatus === 'purchased' && c.purchased)
@@ -472,6 +487,16 @@ export default function Dashboard() {
         </td>
       )
       case 'ordersInPeriod':       return <td key={col.key} className="py-2 pr-3 text-center text-gray-300">{c.ordersInPeriod}</td>
+      case 'paidOrdersInPeriod':   return (
+        <td key={col.key} className="py-2 pr-3 text-center">
+          {c.paidOrdersInPeriod > 0
+            ? <span className="text-green-400 font-medium">{c.paidOrdersInPeriod}</span>
+            : <span className="text-gray-600">0</span>}
+          {c.ordersInPeriod > c.paidOrdersInPeriod && (
+            <span className="text-gray-600 text-xs ml-1">/ {c.ordersInPeriod}</span>
+          )}
+        </td>
+      )
       case 'totalAllTime':         return (
         <td key={col.key} className="py-2 pr-3 text-center">
           <span className={c.totalAllTime > 1 ? 'text-purple-400 font-semibold' : 'text-gray-400'}>{c.totalAllTime}</span>
@@ -711,7 +736,8 @@ export default function Dashboard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase">
-                      <th className="pb-2 pr-4">Nome</th><th className="pb-2 pr-4">E-mail</th>
+                      <th className="pb-2 pr-4">Nome</th><th className="pb-2 pr-4">Empresa</th>
+                      <th className="pb-2 pr-4">CNPJ</th><th className="pb-2 pr-4">E-mail</th>
                       <th className="pb-2 pr-4">Telefone</th><th className="pb-2 pr-4">Cadastro</th>
                       <th className="pb-2 pr-4">Status</th><th className="pb-2 pr-4">Pedidos</th>
                       <th className="pb-2 pr-4">Captado</th><th className="pb-2 pr-4">Pago</th><th className="pb-2">1ª Compra</th>
@@ -721,6 +747,8 @@ export default function Dashboard() {
                     {filteredCustomers.slice(0, 200).map((c) => (
                       <tr key={c.id} className="hover:bg-gray-800/50 transition-colors">
                         <td className="py-2 pr-4 text-gray-200">{c.firstName} {c.lastName}</td>
+                        <td className="py-2 pr-4 text-gray-300">{c.tradeName || c.corporateName || '—'}</td>
+                        <td className="py-2 pr-4 text-gray-400">{c.cnpj || '—'}</td>
                         <td className="py-2 pr-4 text-gray-400">{c.email}</td>
                         <td className="py-2 pr-4 text-gray-400">{fmtPhone(c.phone)}</td>
                         <td className="py-2 pr-4 text-gray-400">{c.createdIn ? fmtDate(c.createdIn) : '—'}</td>
@@ -780,7 +808,7 @@ export default function Dashboard() {
                     <button onClick={() => {
                       const ws = XLSX.utils.json_to_sheet(vendas.regionData.map(r => ({
                         Estado: r.state, 'Total Clientes': r.count, Novos: r.newCount, Recorrentes: r.recurringCount,
-                        'Pedidos': r.orders, 'Receita Captada (R$)': r.revenue.toFixed(2),
+                        'Ped. Captados': r.orders, 'Ped. Pagos': r.paidOrders, 'Receita Captada (R$)': r.revenue.toFixed(2),
                         'Receita Paga (R$)': r.paidRevenue.toFixed(2),
                         'Ticket Médio Captado (R$)': r.avgTicket.toFixed(2),
                         'Ticket Médio Pago (R$)': r.avgPaidTicket.toFixed(2),
@@ -802,12 +830,13 @@ export default function Dashboard() {
                           <th className="pb-2 pr-4">Clientes</th>
                           <th className="pb-2 pr-4">Novos</th>
                           <th className="pb-2 pr-4">Recorrentes</th>
-                          <th className="pb-2 pr-4">Pedidos</th>
+                          <th className="pb-2 pr-4">Ped. Captados</th>
+                          <th className="pb-2 pr-4">Ped. Pagos</th>
                           <th className="pb-2 pr-4">Receita Captada</th>
                           <th className="pb-2 pr-4">Receita Paga</th>
                           <th className="pb-2 pr-4">Ticket Médio (cap.)</th>
                           <th className="pb-2 pr-4">Ticket Médio (pago)</th>
-                          <th className="pb-2 pr-4">Volume (L)</th>
+                          <th className="pb-2 pr-4">Volume Pago (L)</th>
                           <th className="pb-2">% do Total</th>
                         </tr>
                       </thead>
@@ -825,6 +854,7 @@ export default function Dashboard() {
                               <span className="text-gray-600 text-xs ml-1">({r.count > 0 ? ((r.recurringCount/r.count)*100).toFixed(0) : 0}%)</span>
                             </td>
                             <td className="py-2 pr-4 text-gray-300">{r.orders}</td>
+                            <td className="py-2 pr-4 text-green-400 font-medium">{r.paidOrders}</td>
                             <td className="py-2 pr-4 text-gray-300">{fmt(r.revenue)}</td>
                             <td className="py-2 pr-4 text-green-400 font-medium">{fmt(r.paidRevenue)}</td>
                             <td className="py-2 pr-4 text-gray-400 text-xs">{r.avgTicket > 0 ? fmt(r.avgTicket) : '—'}</td>
@@ -1508,9 +1538,14 @@ export default function Dashboard() {
 
                   {/* Lista por grupo */}
                   {(['red', 'yellow', 'green'] as const).map(risk => {
-                    const list = risk === 'red' ? red : risk === 'yellow' ? yellow : green
-                    if (list.length === 0) return null
+                    const baseList = risk === 'red' ? red : risk === 'yellow' ? yellow : green
+                    if (baseList.length === 0) return null
                     const c = riskColor[risk]
+                    const dir = churnSortDir === 'asc' ? 1 : -1
+                    const list = [...baseList].sort((a, b) =>
+                      churnSortKey === 'receita' ? (a.paidSpent - b.paidSpent) * dir : (a.diasDesde - b.diasDesde) * dir
+                    )
+                    const arrow = (k: 'dias' | 'receita') => churnSortKey === k ? (churnSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'
                     return (
                       <div key={risk} className={`${c.bg} border ${c.border} rounded-xl p-4`}>
                         <div className="flex items-center gap-2 mb-4">
@@ -1527,11 +1562,13 @@ export default function Dashboard() {
                             <thead>
                               <tr className="text-gray-400 border-b border-gray-700 text-xs">
                                 <th className="pb-2 pr-4">Cliente</th>
+                                <th className="pb-2 pr-4">CNPJ</th>
+                                <th className="pb-2 pr-4">Tipo</th>
                                 <th className="pb-2 pr-4">Estado</th>
                                 <th className="pb-2 pr-4 text-right">1ª Compra</th>
                                 <th className="pb-2 pr-4 text-right">Ped. total</th>
-                                <th className="pb-2 pr-4 text-right">Rec. Paga (período)</th>
-                                <th className="pb-2 pr-4 text-right">Dias s/ comprar</th>
+                                <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-200" onClick={() => toggleChurnSort('receita')}>Rec. Paga (período){arrow('receita')}</th>
+                                <th className="pb-2 pr-4 text-right cursor-pointer select-none hover:text-gray-200" onClick={() => toggleChurnSort('dias')}>Dias s/ comprar{arrow('dias')}</th>
                                 <th className="pb-2 text-right">Última compra</th>
                               </tr>
                             </thead>
@@ -1541,6 +1578,12 @@ export default function Dashboard() {
                                   <td className="py-2 pr-4">
                                     <div className="text-gray-200 font-medium">{c2.name || c2.email}</div>
                                     {c2.tradeName && <div className="text-gray-500 text-xs">{c2.tradeName}</div>}
+                                  </td>
+                                  <td className="py-2 pr-4 text-gray-400 text-xs">{c2.cnpj ?? '—'}</td>
+                                  <td className="py-2 pr-4">
+                                    {c2.businessType
+                                      ? <span className={`px-2 py-0.5 rounded text-xs font-medium ${c2.businessType.toUpperCase().includes('CONSTRU') ? 'bg-orange-900/50 text-orange-300' : 'bg-sky-900/50 text-sky-300'}`}>{c2.businessType}</span>
+                                      : <span className="text-gray-600 text-xs">—</span>}
                                   </td>
                                   <td className="py-2 pr-4 text-gray-400 text-xs">{c2.state ?? '—'}</td>
                                   <td className="py-2 pr-4 text-right text-gray-400 text-xs">{c2.firstOrderDate ? fmtDate(c2.firstOrderDate) : '—'}</td>
