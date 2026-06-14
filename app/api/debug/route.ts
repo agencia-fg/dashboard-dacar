@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 const ACCOUNT = process.env.VTEX_ACCOUNT!
 const APP_KEY = process.env.VTEX_APP_KEY!
@@ -12,31 +13,60 @@ const headers = {
   'Content-Type': 'application/json',
 }
 
-export async function GET() {
+// Uso: /api/debug?cnpj=65733397000176  ou  /api/debug?email=...
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const cnpj = searchParams.get('cnpj')
+  const email = searchParams.get('email')
   const results: Record<string, unknown> = {}
-  const today = new Date().toISOString().split('T')[0]
-  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
 
-  // Test AC: Abandoned Checkouts
+  // 1. Registro CL completo (TODOS os campos) — para achar tipo VAREJO/CONSTRUTORA
   try {
-    const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/AC/search?_fields=email,createdIn,lastInteractionIn,status,cartValue&_sort=createdIn%20DESC`
-    const r = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-3' } })
-    results.AC_entity = { status: r.status, body: r.ok ? await r.json() : await r.text() }
-  } catch (e) { results.AC_entity = { error: String(e) } }
+    let url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CL/search?_fields=_all`
+    if (cnpj) url += `&corporateDocument=${cnpj}`
+    else if (email) url += `&email=${encodeURIComponent(email)}`
+    const r = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-1' } })
+    results.CL_full = { status: r.status, body: r.ok ? await r.json() : await r.text() }
+  } catch (e) { results.CL_full = { error: String(e) } }
 
-  // Test CC: Carrinhos (outra entidade possível)
+  // 2. Entidade organizations (B2B Suite) — pode ter o tipo
   try {
-    const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/CC/search?_fields=email,createdIn,status&_sort=createdIn%20DESC`
+    const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/organizations/search?_fields=_all`
     const r = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-2' } })
-    results.CC_entity = { status: r.status, body: r.ok ? await r.json() : await r.text() }
-  } catch (e) { results.CC_entity = { error: String(e) } }
+    results.organizations = { status: r.status, body: r.ok ? await r.json() : await r.text() }
+  } catch (e) { results.organizations = { error: String(e) } }
 
-  // Test lista entidades disponíveis
+  // 3. Entidade b2b_users — mapeia email → org
   try {
-    const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities`
-    const r = await fetch(url, { headers })
-    results.masterdata_entities = { status: r.status, body: r.ok ? await r.json() : await r.text() }
-  } catch (e) { results.masterdata_entities = { error: String(e) } }
+    let url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/dataentities/b2b_users/search?_fields=_all`
+    if (email) url += `&email=${encodeURIComponent(email)}`
+    const r = await fetch(url, { headers: { ...headers, 'REST-Range': 'resources=0-2' } })
+    results.b2b_users = { status: r.status, body: r.ok ? await r.json() : await r.text() }
+  } catch (e) { results.b2b_users = { error: String(e) } }
+
+  // 4. Pedidos do CNPJ/email — status + valor + itens + volume parseado
+  if (cnpj || email) {
+    try {
+      const q = cnpj ?? email
+      const url = `https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders?q=${encodeURIComponent(q!)}&per_page=20&page=1`
+      const r = await fetch(url, { headers })
+      const listData = r.ok ? await r.json() : null
+      const list = listData?.list ?? []
+      const orders = await Promise.all(list.slice(0, 10).map(async (o: { orderId: string }) => {
+        const dr = await fetch(`https://${ACCOUNT}.vtexcommercestable.com.br/api/oms/pvt/orders/${o.orderId}`, { headers })
+        if (!dr.ok) return { orderId: o.orderId, error: dr.status }
+        const d = await dr.json()
+        return {
+          orderId: d.orderId,
+          status: d.status,
+          value: (d.value ?? 0) / 100,
+          creationDate: d.creationDate,
+          items: (d.items ?? []).map((it: { name: string; quantity: number }) => ({ name: it.name, qty: it.quantity })),
+        }
+      }))
+      results.orders = { count: list.length, orders }
+    } catch (e) { results.orders = { error: String(e) } }
+  }
 
   return NextResponse.json(results, { status: 200 })
 }
