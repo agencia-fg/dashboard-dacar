@@ -69,8 +69,6 @@ interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regi
 interface SKURow { name: string; orders: number; unitsSold: number; revenue: number; volumeL: number }
 interface ProductsData { skus: SKURow[]; totalRevenue: number; totalVolumeL: number; totalOrders: number; dateFrom: string; dateTo: string }
 
-interface CohortRow { label: string; cohortKey: string; size: number; retention: (number | null)[] }
-interface CohortData { cohorts: CohortRow[]; offsets: string[] }
 
 // ── Column definitions ─────────────────────────────────────────────
 interface ColDef { key: string; label: string; sortKey: keyof VendasCustomer | null }
@@ -194,7 +192,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
 }
 
 export default function Dashboard() {
-  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn' | 'coorte'>('cadastros')
+  const [tab, setTab] = useState<'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn'>('cadastros')
   const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'))
 
@@ -243,10 +241,6 @@ export default function Dashboard() {
   const churnDateTo   = new Date().toISOString().slice(0, 10)
   const churnDateFrom = (() => { const d = new Date(); d.setMonth(d.getMonth() - CHURN_MONTHS); return d.toISOString().slice(0, 10) })()
 
-  // Coorte
-  const [cohort, setCohort] = useState<CohortData | null>(null)
-  const [cohortLoading, setCohortLoading] = useState(false)
-  const [cohortError, setCohortError] = useState('')
 
   // Produtos
   const [products, setProducts] = useState<ProductsData | null>(null)
@@ -353,18 +347,6 @@ export default function Dashboard() {
     finally { setVendasChurnLoading(false) }
   }, [churnDateFrom, churnDateTo])
 
-  const loadCohort = useCallback(async () => {
-    setCohortLoading(true); setCohortError('')
-    try {
-      const res = await fetch('/api/cohort')
-      if (!res.ok) throw new Error(`Erro ${res.status}`)
-      const json = await res.json()
-      if (json.error) throw new Error(json.error)
-      setCohort(json)
-    } catch (e: unknown) { setCohortError(e instanceof Error ? e.message : 'Erro') }
-    finally { setCohortLoading(false) }
-  }, [])
-
   const loadProducts = useCallback(async () => {
     setProductsLoading(true); setProductsError('')
     try {
@@ -389,19 +371,17 @@ export default function Dashboard() {
     finally { setEvolucaoLoading(false) }
   }, [])
 
-  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn' | 'coorte') => {
+  const handleTabChange = (t: 'cadastros' | 'vendas' | 'regioes' | 'evolucao' | 'produtos' | 'churn') => {
     setTab(t)
     if ((t === 'vendas' || t === 'regioes') && !vendas) loadVendas()
     if (t === 'churn' && !vendasChurn) loadVendasChurn()
     if (t === 'evolucao' && !evolucao) loadEvolucao()
     if (t === 'produtos' && !products) loadProducts()
-    if (t === 'coorte' && !cohort) loadCohort()
   }
 
   const handleUpdate = () => {
     if (tab === 'cadastros') { loadCadastros(); loadGA4() }
     else if (tab === 'produtos') { setProducts(null); loadProducts() }
-    else if (tab === 'coorte') { setCohort(null); loadCohort() }
     else if (tab === 'churn') { setVendasChurn(null); loadVendasChurn() }
     else { setVendas(null); loadVendas() }
     // churn reuses vendas data, cleared above
@@ -474,7 +454,7 @@ export default function Dashboard() {
       ]
     : []
 
-  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : tab === 'coorte' ? cohortLoading : tab === 'churn' ? vendasChurnLoading : vendasLoading
+  const isLoading = tab === 'cadastros' ? loading : tab === 'evolucao' ? evolucaoLoading : tab === 'produtos' ? productsLoading : tab === 'churn' ? vendasChurnLoading : vendasLoading
 
   // Churn risk — fixed thresholds: ≤30d green, 31-60d yellow, >60d red
   // Only recurring customers (totalAllTime >= 2) appear in the semaphore
@@ -592,7 +572,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-bold text-white">Dacar Tintas — Dashboard</h1>
           <div className="flex gap-1 mt-2">
-            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual'],['produtos','Ranking de Produtos'],['churn','Risco de Churn'],['coorte','Retenção por Coorte']] as const).map(([t, label]) => (
+            {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual'],['produtos','Ranking de Produtos'],['churn','Risco de Churn']] as const).map(([t, label]) => (
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
                 {label}
@@ -1521,102 +1501,6 @@ export default function Dashboard() {
                 </div>
               </>
             )}
-          </>
-        )}
-
-        {tab === 'coorte' && (
-          <>
-            {cohortError && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{cohortError}</div>}
-            {cohortLoading && (
-              <div className="text-center py-20 text-gray-400 text-sm">
-                <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-blue-500" />
-                Buscando histórico dos últimos 12 meses... pode levar alguns segundos.
-              </div>
-            )}
-            {cohort && (() => {
-              // Color: green gradient 0%=gray, 100%=deep green
-              function heatColor(pct: number | null): string {
-                if (pct === null) return 'bg-gray-900 text-gray-700'
-                if (pct === 0) return 'bg-gray-800 text-gray-500'
-                if (pct >= 80) return 'bg-green-700 text-white'
-                if (pct >= 60) return 'bg-green-800 text-green-100'
-                if (pct >= 40) return 'bg-green-900 text-green-300'
-                if (pct >= 20) return 'bg-emerald-950 text-emerald-400'
-                return 'bg-gray-800/80 text-gray-400'
-              }
-
-              // Average retention per offset (M+1, M+2, ...)
-              const avgRetention = cohort.offsets.map((_, offsetIdx) => {
-                const vals = cohort.cohorts
-                  .map(c => c.retention[offsetIdx])
-                  .filter((v): v is number => v !== null && offsetIdx > 0)
-                if (vals.length === 0) return null
-                return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
-              })
-
-              return (
-                <div className="space-y-6">
-                  <div className="p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300">
-                    💡 Cada linha = coorte de clientes que fizeram a <strong>primeira compra</strong> naquele mês. As colunas mostram quantos % voltaram a comprar nos meses seguintes.
-                  </div>
-
-                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 overflow-x-auto">
-                    <h2 className="text-sm font-semibold text-gray-300 mb-4">Tabela de Retenção por Coorte — últimos 12 meses</h2>
-                    <table className="text-xs border-separate" style={{ borderSpacing: '2px' }}>
-                      <thead>
-                        <tr>
-                          <th className="text-left text-gray-500 pb-1 pr-3 font-normal">Coorte</th>
-                          <th className="text-right text-gray-500 pb-1 pr-3 font-normal">Novos</th>
-                          {cohort.offsets.map(o => (
-                            <th key={o} className="text-center text-gray-500 pb-1 px-0.5 font-normal w-14">{o}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cohort.cohorts.map((row) => (
-                          <tr key={row.cohortKey}>
-                            <td className="text-gray-400 pr-3 py-0.5 whitespace-nowrap">{row.label}</td>
-                            <td className="text-right text-gray-300 pr-3 py-0.5 font-medium">{row.size}</td>
-                            {row.retention.map((pct, j) => (
-                              <td key={j} className={`text-center py-0.5 px-0.5 rounded font-medium w-14 ${heatColor(pct)}`}>
-                                {pct !== null ? `${pct}%` : ''}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                        {/* Average row */}
-                        <tr className="border-t border-gray-700">
-                          <td className="text-gray-500 pr-3 py-1 pt-2 text-xs">Média</td>
-                          <td className="pr-3 py-1" />
-                          {avgRetention.map((avg, j) => (
-                            <td key={j} className={`text-center py-1 px-0.5 rounded font-bold w-14 ${heatColor(avg)}`}>
-                              {avg !== null ? `${avg}%` : j === 0 ? '100%' : ''}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Summary cards */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[1, 2, 3, 6].map(offset => {
-                      const vals = cohort.cohorts
-                        .map(c => c.retention[offset])
-                        .filter((v): v is number => v !== null && v > 0)
-                      const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-                      return (
-                        <div key={offset} className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-                          <div className="text-2xl font-bold text-white">{avg !== null ? `${avg}%` : '—'}</div>
-                          <div className="text-xs text-gray-400 mt-1">Retenção M+{offset}</div>
-                          <div className="text-xs text-gray-600">{offset === 1 ? '1 mês depois' : offset === 2 ? '2 meses depois' : offset === 3 ? '3 meses depois' : '6 meses depois'}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
           </>
         )}
 
