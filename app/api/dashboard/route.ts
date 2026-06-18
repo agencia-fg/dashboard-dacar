@@ -50,6 +50,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const customers = await fetchAllCustomers(dateFrom, dateTo)
+
+    // Modo leve: só contagens de cadastro (para comparar com período anterior sem buscar pedidos)
+    if (searchParams.get('summaryOnly') === '1') {
+      return NextResponse.json({
+        summary: {
+          totalCustomers: customers.length,
+          approvedCount: customers.filter(c => c.approved === true).length,
+        },
+      })
+    }
+
     const ordersByEmail = await fetchOrdersForCustomers(customers)
 
     const enriched = customers.map((c) => {

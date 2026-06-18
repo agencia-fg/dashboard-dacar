@@ -61,10 +61,12 @@ interface VendasCustomer {
   city: string | null; state: string | null; approved: boolean | null
   paidVolumeL: number
   paymentMethods?: string[]
+  ltvEst?: number
 }
 interface RegionData { state: string; count: number; newCount: number; recurringCount: number; revenue: number; paidRevenue: number; orders: number; paidOrders: number; paidVolumeL: number; avgTicket: number; avgPaidTicket: number }
 interface PaymentRow { method: string; orders: number; paidOrders: number; captada: number; paga: number }
-interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[]; byPayment?: PaymentRow[] }
+interface TypeRow { type: string; customers: number; paidOrders: number; paidRevenue: number; paidVolumeL: number; avgPaidTicket: number }
+interface VendasData { summary: VendasSummary; customers: VendasCustomer[]; regionData: RegionData[]; byPayment?: PaymentRow[]; byType?: TypeRow[] }
 
 interface SKURow { name: string; orders: number; unitsSold: number; revenue: number; volumeL: number }
 interface ProductsData { skus: SKURow[]; totalRevenue: number; totalVolumeL: number; totalOrders: number; dateFrom: string; dateTo: string }
@@ -93,6 +95,7 @@ const VENDAS_COLUMNS: ColDef[] = [
   { key: 'totalSpent',          label: 'Captado',       sortKey: 'totalSpent' },
   { key: 'paidSpent',           label: 'Pago',          sortKey: 'paidSpent' },
   { key: 'paidVolumeL',         label: 'Volume Faturado (L)', sortKey: 'paidVolumeL' },
+  { key: 'ltvEst',              label: 'LTV est.',      sortKey: 'ltvEst' },
   { key: 'paymentMethods',      label: 'Pagamento',     sortKey: null },
   { key: 'utmSource',           label: 'UTM Source',    sortKey: null },
   { key: 'utmMedium',           label: 'UTM Medium',    sortKey: null },
@@ -130,6 +133,22 @@ const DEFAULT_CRM_MESSAGES: Record<string, string> = {
   'Iniciou pedido':      'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Vi que você começou um pedido com a gente, mas não chegou a concluir. Posso te ajudar a finalizar ou esclarecer alguma dúvida sobre os produtos?',
   'Chegou ao pagamento': 'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Seu pedido ficou quase pronto — faltou apenas concluir o pagamento. Posso te ajudar a finalizar ou ver a melhor condição de pagamento para você?',
   'default':             'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Estamos à disposição para te ajudar no que precisar — dúvidas, orçamento ou indicação de produtos. Como podemos te ajudar hoje?',
+}
+
+// Período anterior de mesma duração (imediatamente antes de [from, to])
+function prevPeriodRange(from: string, to: string): { from: string; to: string } {
+  const f = new Date(from + 'T00:00:00Z')
+  const t = new Date(to + 'T00:00:00Z')
+  const days = Math.round((t.getTime() - f.getTime()) / 86400000) + 1
+  const prevTo = new Date(f.getTime() - 86400000)
+  const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000)
+  return { from: prevFrom.toISOString().slice(0, 10), to: prevTo.toISOString().slice(0, 10) }
+}
+
+// Variação percentual entre atual e anterior (null se não dá pra comparar)
+function pctDelta(cur: number, prev: number): number | null {
+  if (prev === 0) return cur === 0 ? 0 : null
+  return ((cur - prev) / prev) * 100
 }
 
 // Normaliza telefone para formato wa.me (dígitos com DDI 55)
@@ -180,6 +199,7 @@ function exportToExcel(customers: VendasCustomer[], filename = 'dacar-clientes')
     'Captado (R$)': c.totalSpent,
     'Pago (R$)': c.paidSpent,
     'Volume Faturado (L)': (c.paidVolumeL ?? 0) > 0 ? c.paidVolumeL : '',
+    'LTV est. (R$)': c.ltvEst ?? '',
     'Meios de Pagamento': c.paymentMethods?.join(', ') ?? '',
     'UTM Source': c.utmSource ?? '',
     'UTM Medium': c.utmMedium ?? '',
@@ -205,6 +225,10 @@ export default function Dashboard() {
   const [showCrmPanel, setShowCrmPanel] = useState(false)
   const [crmMessages, setCrmMessages] = useState<Record<string, string>>(DEFAULT_CRM_MESSAGES)
   const msgForStage = (stage: string) => crmMessages[stage] ?? crmMessages['default']
+
+  // Comparativo com período anterior
+  const [prevCadastros, setPrevCadastros] = useState<{ totalCustomers: number; approvedCount: number } | null>(null)
+  const [prevVendas, setPrevVendas] = useState<{ totalOrders: number; paidOrdersCount: number; totalRevenueCaptada: number; totalRevenuePaga: number } | null>(null)
 
   // Vendas tab
   const [vendas, setVendas] = useState<VendasData | null>(null)
@@ -293,10 +317,12 @@ export default function Dashboard() {
 
   const loadCadastros = useCallback(async () => {
     setLoading(true); setError('')
+    const prev = prevPeriodRange(dateFrom, dateTo)
     try {
-      const [dashRes, funnelRes] = await Promise.all([
+      const [dashRes, funnelRes, prevRes] = await Promise.all([
         fetch(`/api/dashboard?from=${dateFrom}&to=${dateTo}`),
         fetch(`/api/funnel?from=${dateFrom}&to=${dateTo}`),
+        fetch(`/api/dashboard?from=${prev.from}&to=${prev.to}&summaryOnly=1`),
       ])
       if (!dashRes.ok) throw new Error(`Erro ${dashRes.status}`)
       const json = await dashRes.json()
@@ -305,6 +331,10 @@ export default function Dashboard() {
       if (funnelRes.ok) {
         const fj = await funnelRes.json()
         if (!fj.error) setFunnelData(fj)
+      }
+      if (prevRes.ok) {
+        const pj = await prevRes.json()
+        if (pj.summary) setPrevCadastros(pj.summary)
       }
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Erro') }
     finally { setLoading(false) }
@@ -323,12 +353,20 @@ export default function Dashboard() {
 
   const loadVendas = useCallback(async () => {
     setVendasLoading(true); setVendasError('')
+    const prev = prevPeriodRange(dateFrom, dateTo)
     try {
-      const res = await fetch(`/api/vendas?from=${dateFrom}&to=${dateTo}`)
+      const [res, prevRes] = await Promise.all([
+        fetch(`/api/vendas?from=${dateFrom}&to=${dateTo}`),
+        fetch(`/api/vendas?from=${prev.from}&to=${prev.to}&summaryOnly=1`),
+      ])
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       const json = await res.json()
       if (json.error) throw new Error(json.error)
       setVendas(json)
+      if (prevRes.ok) {
+        const pj = await prevRes.json()
+        if (pj.summary) setPrevVendas(pj.summary)
+      }
     } catch (e: unknown) { setVendasError(e instanceof Error ? e.message : 'Erro') }
     finally { setVendasLoading(false) }
   }, [dateFrom, dateTo])
@@ -549,6 +587,13 @@ export default function Dashboard() {
             : <span className="text-gray-600">—</span>}
         </td>
       )
+      case 'ltvEst': return (
+        <td key={col.key} className="py-2 pr-3 text-right">
+          {(c.ltvEst ?? 0) > 0
+            ? <span className="text-amber-300 font-medium" title="Ticket médio pago × total de pedidos histórico (estimativa)">{fmt(c.ltvEst!)}</span>
+            : <span className="text-gray-600">—</span>}
+        </td>
+      )
       case 'paymentMethods': return (
         <td key={col.key} className="py-2 pr-3">
           {(c.paymentMethods?.length ?? 0) > 0
@@ -606,8 +651,10 @@ export default function Dashboard() {
             {error && <div className="bg-red-900/40 border border-red-700 rounded-lg p-4 text-red-300 text-sm">{error}</div>}
 
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-              <KpiCard icon={<Users size={20} />} label="Total de Cadastros" value={data?.summary.totalCustomers ?? '—'} color="blue" />
-              <KpiCard icon={<UserCheck size={20} />} label="Cadastros Aprovados" value={data?.summary.approvedCount ?? '—'} sub={data?.summary.approvedCount != null ? `${((data.summary.approvedCount / data.summary.totalCustomers) * 100).toFixed(0)}% do total` : undefined} color="green" />
+              <KpiCard icon={<Users size={20} />} label="Total de Cadastros" value={data?.summary.totalCustomers ?? '—'} color="blue"
+                delta={data && prevCadastros ? pctDelta(data.summary.totalCustomers, prevCadastros.totalCustomers) : undefined} />
+              <KpiCard icon={<UserCheck size={20} />} label="Cadastros Aprovados" value={data?.summary.approvedCount ?? '—'} sub={data?.summary.approvedCount != null ? `${((data.summary.approvedCount / data.summary.totalCustomers) * 100).toFixed(0)}% do total` : undefined} color="green"
+                delta={data && prevCadastros ? pctDelta(data.summary.approvedCount, prevCadastros.approvedCount) : undefined} />
               <KpiCard icon={<ShoppingCart size={20} />} label="Compraram" value={data?.summary.purchasedCount ?? '—'} sub={data ? `${data.summary.conversionRate}% dos aprovados` : undefined} color="purple" />
               <KpiCard icon={<TrendingUp size={20} />} label="Não compraram" value={data?.summary.neverPurchasedCount ?? '—'} sub={data ? `${(100 - data.summary.conversionRate).toFixed(1)}% dos aprovados` : undefined} color="red" />
               <KpiCard icon={<DollarSign size={20} />} label="Receita Captada" value={data ? fmt(data.summary.totalRevenue) : '—'} sub="todos os pedidos" color="yellow" />
@@ -998,9 +1045,12 @@ export default function Dashboard() {
 
                 {/* KPIs */}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                  <KpiCard icon={<ShoppingCart size={20} />} label="Total de Pedidos" value={vendas.summary.totalOrders} color="blue" />
-                  <KpiCard icon={<DollarSign size={20} />} label="Receita Captada" value={fmt(vendas.summary.totalRevenueCaptada)} sub="todos os pedidos" color="yellow" />
-                  <KpiCard icon={<DollarSign size={20} />} label="Receita Paga" value={fmt(vendas.summary.totalRevenuePaga)} sub="pagamento confirmado" color="green" />
+                  <KpiCard icon={<ShoppingCart size={20} />} label="Total de Pedidos" value={vendas.summary.totalOrders} color="blue"
+                    delta={prevVendas ? pctDelta(vendas.summary.totalOrders, prevVendas.totalOrders) : undefined} />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Captada" value={fmt(vendas.summary.totalRevenueCaptada)} sub="todos os pedidos" color="yellow"
+                    delta={prevVendas ? pctDelta(vendas.summary.totalRevenueCaptada, prevVendas.totalRevenueCaptada) : undefined} />
+                  <KpiCard icon={<DollarSign size={20} />} label="Receita Paga" value={fmt(vendas.summary.totalRevenuePaga)} sub="pagamento confirmado" color="green"
+                    delta={prevVendas ? pctDelta(vendas.summary.totalRevenuePaga, prevVendas.totalRevenuePaga) : undefined} />
                   <KpiCard icon={<Repeat2 size={20} />} label="Clientes Recorrentes" value={vendas.summary.recurringCount}
                     sub={vendas.summary.uniqueCustomers > 0 ? `${((vendas.summary.recurringCount / vendas.summary.uniqueCustomers) * 100).toFixed(1)}% dos compradores` : undefined} color="purple" />
                   <KpiCard icon={<UserCheck size={20} />} label="Clientes Novos" value={vendas.summary.newCount}
@@ -1103,6 +1153,36 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </div>
+
+                {/* Por Tipo (Varejo × Construtora) */}
+                {(vendas.byType?.length ?? 0) > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-1">Faturamento por Tipo de Cliente</h2>
+                    <p className="text-xs text-gray-500 mb-4">Classificação Varejo/Construtora via CNAE — apenas pedidos pagos do período</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {vendas.byType!.map(t => {
+                        const totalPaga = vendas.summary.totalRevenuePaga || 1
+                        const share = (t.paidRevenue / totalPaga) * 100
+                        return (
+                          <div key={t.type} className="bg-gray-800/40 border border-gray-700/50 rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <BizBadge type={t.type === 'Sem classificação' ? null : t.type} />
+                              {t.type === 'Sem classificação' && <span className="text-xs text-gray-500">Sem CNAE</span>}
+                              <span className="text-xs text-gray-500">{t.customers} cliente{t.customers !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="text-lg font-bold text-green-400">{fmt(t.paidRevenue)}</div>
+                            <div className="text-xs text-gray-500 mb-2">{share.toFixed(1)}% do faturado</div>
+                            <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-gray-700/50">
+                              <div><div className="text-xs text-gray-500">Pedidos</div><div className="text-sm text-gray-200 font-medium">{t.paidOrders}</div></div>
+                              <div><div className="text-xs text-gray-500">Ticket méd.</div><div className="text-sm text-gray-200 font-medium">{t.avgPaidTicket > 0 ? fmt(t.avgPaidTicket) : '—'}</div></div>
+                              <div><div className="text-xs text-gray-500">Volume</div><div className="text-sm text-cyan-400 font-medium">{t.paidVolumeL.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} L</div></div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Meios de Pagamento */}
                 {(vendas.byPayment?.length ?? 0) > 0 && (
@@ -1655,12 +1735,14 @@ export default function Dashboard() {
   )
 }
 
-function KpiCard({ icon, label, value, sub, color }: {
+function KpiCard({ icon, label, value, sub, color, delta, deltaInverse }: {
   icon: React.ReactNode
   label: string
   value: string | number
   sub?: string
   color: 'blue' | 'green' | 'red' | 'yellow' | 'purple'
+  delta?: number | null      // variação % vs período anterior
+  deltaInverse?: boolean      // true quando subir é ruim (ex: churn)
 }) {
   const colors = {
     blue: 'bg-blue-900/30 text-blue-400',
@@ -1669,9 +1751,20 @@ function KpiCard({ icon, label, value, sub, color }: {
     yellow: 'bg-yellow-900/30 text-yellow-400',
     purple: 'bg-purple-900/30 text-purple-400',
   }
+  const showDelta = delta !== undefined && delta !== null && isFinite(delta)
+  const up = (delta ?? 0) >= 0
+  const good = deltaInverse ? !up : up
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      <div className={`inline-flex p-2 rounded-lg ${colors[color]} mb-3`}>{icon}</div>
+      <div className="flex items-start justify-between">
+        <div className={`inline-flex p-2 rounded-lg ${colors[color]} mb-3`}>{icon}</div>
+        {showDelta && (
+          <span className={`text-xs font-semibold ${good ? 'text-green-400' : 'text-red-400'}`}
+            title="vs. período anterior de mesma duração">
+            {up ? '▲' : '▼'} {Math.abs(delta!).toFixed(0)}%
+          </span>
+        )}
+      </div>
       <p className="text-2xl font-bold text-white">{value}</p>
       <p className="text-sm text-gray-400 mt-0.5">{label}</p>
       {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}

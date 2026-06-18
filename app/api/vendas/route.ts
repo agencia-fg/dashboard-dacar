@@ -131,7 +131,7 @@ async function fetchOrdersPage(dateFrom: string, dateTo: string, page: number): 
 
 async function fetchAllOrdersInPeriod(dateFrom: string, dateTo: string): Promise<OrderListItem[]> {
   const first = await fetchOrdersPage(dateFrom, dateTo, 1)
-  const pages = Math.min(Math.ceil(first.total / 100), 20)
+  const pages = Math.min(Math.ceil(first.total / 100), 30)
   if (pages <= 1) return first.list
   const remaining = await Promise.all(
     Array.from({ length: pages - 1 }, (_, i) =>
@@ -237,12 +237,21 @@ export async function GET(req: NextRequest) {
       }))
       .sort((a, b) => b.paga - a.paga)
 
+    // Modo leve: só os totais da listagem (usado para comparar com período anterior, sem custo de detalhes)
+    if (searchParams.get('summaryOnly') === '1') {
+      const paidOrdersCount = orders.filter(o => PAID_STATUSES.has(o.status)).length
+      return NextResponse.json({
+        summary: { totalOrders, paidOrdersCount, totalRevenueCaptada, totalRevenuePaga },
+      })
+    }
+
     // Mapa orderId → meio de pagamento (para vincular ao cliente nos detalhes)
     const paymentByOrderId = new Map(orders.map(o => [o.orderId, o.paymentNames?.trim() || 'Não informado']))
 
-    // 2. Pega detalhes (limitado a 300)
-    const sampleOrders = orders.slice(0, 300)
-    const details = await batchProcess(sampleOrders, 15, (o) => fetchOrderDetail(o.orderId))
+    // 2. Pega detalhes dos pedidos (até 1500 — cobre o volume atual por completo)
+    const SAMPLE_CAP = 1500
+    const sampleOrders = orders.slice(0, SAMPLE_CAP)
+    const details = await batchProcess(sampleOrders, 20, (o) => fetchOrderDetail(o.orderId))
 
     // 3. Agrupa por email
     const byEmail = new Map<string, {
@@ -366,6 +375,14 @@ export async function GET(req: NextRequest) {
         utmMedium: utm?.utmMedium ?? null,
         utmCampaign: utm?.utmCampaign ?? null,
         paidVolumeL: Math.round((info.paidVolumeL ?? 0) * 100) / 100,
+        // LTV estimado = ticket médio pago × total de pedidos histórico
+        ltvEst: (() => {
+          const totalAll = enrich?.totalAllTime ?? info.orderCount
+          const avgTicket = info.paidOrderCount > 0
+            ? info.paidSpent / info.paidOrderCount
+            : (info.orderCount > 0 ? info.totalSpent / info.orderCount : 0)
+          return Math.round(avgTicket * totalAll * 100) / 100
+        })(),
       }
     }).sort((a, b) => b.totalSpent - a.totalSpent)
 
@@ -394,6 +411,28 @@ export async function GET(req: NextRequest) {
         avgPaidTicket: v.paidOrders > 0 ? Math.round(v.paidRevenue / v.paidOrders * 100) / 100 : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue)
+    // Breakdown por Tipo (Varejo × Construtora × Outros), via CNAE
+    const byTypeMap = new Map<string, { customers: number; paidOrders: number; paidRevenue: number; paidVolumeL: number }>()
+    for (const c of customers) {
+      const t = c.businessType ?? 'Sem classificação'
+      if (!byTypeMap.has(t)) byTypeMap.set(t, { customers: 0, paidOrders: 0, paidRevenue: 0, paidVolumeL: 0 })
+      const e = byTypeMap.get(t)!
+      e.customers++
+      e.paidOrders += c.paidOrdersInPeriod
+      e.paidRevenue += c.paidSpent
+      e.paidVolumeL += c.paidVolumeL
+    }
+    const byType = Array.from(byTypeMap.entries())
+      .map(([type, v]) => ({
+        type,
+        customers: v.customers,
+        paidOrders: v.paidOrders,
+        paidRevenue: Math.round(v.paidRevenue * 100) / 100,
+        paidVolumeL: Math.round(v.paidVolumeL * 10) / 10,
+        avgPaidTicket: v.paidOrders > 0 ? Math.round(v.paidRevenue / v.paidOrders * 100) / 100 : 0,
+      }))
+      .sort((a, b) => b.paidRevenue - a.paidRevenue)
+
     const newWithDays = newCustomers.filter(c => c.daysToPurchase !== null)
     const avgDaysToPurchase = newWithDays.length > 0
       ? Math.round(newWithDays.reduce((s, c) => s + (c.daysToPurchase ?? 0), 0) / newWithDays.length)
@@ -417,7 +456,7 @@ export async function GET(req: NextRequest) {
         newPaidRevenue: newCustomers.reduce((s, c) => s + c.paidSpent, 0),
         avgDaysToPurchase,
         paidCustomersCount: paidCustomers.length,
-        isSample: orders.length > 300,
+        isSample: orders.length > SAMPLE_CAP,
         sampleSize: sampleOrders.length,
         totalPaidVolumeL,
         recurringPaidVolumeL: recurringPaidVolL,
@@ -426,6 +465,7 @@ export async function GET(req: NextRequest) {
       customers,
       regionData,
       byPayment,
+      byType,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
