@@ -118,6 +118,22 @@ function BizBadge({ type }: { type?: string | null }) {
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{type}</span>
 }
 
+// Frases de WhatsApp/e-mail por etapa do funil. {nome} e {empresa} são variáveis.
+const CRM_STAGES: { key: string; label: string }[] = [
+  { key: 'Só cadastrou',        label: 'Só cadastrou' },
+  { key: 'Acessou',             label: 'Acessou (voltou ao site)' },
+  { key: 'Iniciou pedido',      label: 'Iniciou pedido' },
+  { key: 'Chegou ao pagamento', label: 'Chegou ao pagamento' },
+  { key: 'default',             label: 'Genérica (não comprou / outros)' },
+]
+const DEFAULT_CRM_MESSAGES: Record<string, string> = {
+  'Só cadastrou':        'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Vi que você se cadastrou com a gente, mas ainda não fez seu primeiro pedido. Posso te ajudar com alguma dúvida ou indicar o produto ideal para sua necessidade?',
+  'Acessou':             'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Notei que você voltou a visitar nossa loja, mas ainda não finalizou um pedido. Posso te ajudar a encontrar o produto certo ou tirar alguma dúvida?',
+  'Iniciou pedido':      'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Vi que você começou um pedido com a gente, mas não chegou a concluir. Posso te ajudar a finalizar ou esclarecer alguma dúvida sobre os produtos?',
+  'Chegou ao pagamento': 'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Seu pedido ficou quase pronto — faltou apenas concluir o pagamento. Posso te ajudar a finalizar ou ver a melhor condição de pagamento para você?',
+  'default':             'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Estamos à disposição para te ajudar no que precisar — dúvidas, orçamento ou indicação de produtos. Como podemos te ajudar hoje?',
+}
+
 // Normaliza telefone para formato wa.me (dígitos com DDI 55)
 function waDigits(phone?: string | null): string | null {
   const d = (phone ?? '').replace(/\D/g, '')
@@ -189,9 +205,8 @@ export default function Dashboard() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showCrmPanel, setShowCrmPanel] = useState(false)
-  const [crmMessage, setCrmMessage] = useState(
-    'Olá {nome}, tudo bem? Aqui é da Dacar Tintas. Vi que você se cadastrou com a gente mas ainda não fez seu primeiro pedido. Posso te ajudar com alguma dúvida ou indicar o produto ideal pra sua necessidade?'
-  )
+  const [crmMessages, setCrmMessages] = useState<Record<string, string>>(DEFAULT_CRM_MESSAGES)
+  const msgForStage = (stage: string) => crmMessages[stage] ?? crmMessages['default']
 
   // Vendas tab
   const [vendas, setVendas] = useState<VendasData | null>(null)
@@ -791,14 +806,20 @@ export default function Dashboard() {
               </div>
 
               {showCrmPanel && (
-                <div className="mb-4 p-3 bg-gray-800/60 border border-gray-700/60 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-medium text-gray-300">Mensagem (usada nos botões de WhatsApp e e-mail)</label>
-                    <span className="text-xs text-gray-500">Use <code className="text-blue-400">{'{nome}'}</code> e <code className="text-blue-400">{'{empresa}'}</code> — são preenchidos por cliente</span>
+                <div className="mb-4 p-3 bg-gray-800/60 border border-gray-700/60 rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-gray-300">Mensagens por etapa (o botão escolhe a frase certa conforme o status do cliente)</label>
+                    <span className="text-xs text-gray-500">Variáveis: <code className="text-blue-400">{'{nome}'}</code> <code className="text-blue-400">{'{empresa}'}</code></span>
                   </div>
-                  <textarea value={crmMessage} onChange={(e) => setCrmMessage(e.target.value)} rows={3}
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 resize-y" />
-                  <p className="text-xs text-gray-500 mt-2">💡 O botão abre o WhatsApp/e-mail com a mensagem pronta — você revisa e clica enviar. Nada é disparado automaticamente.</p>
+                  {CRM_STAGES.map(s => (
+                    <div key={s.key}>
+                      <label className="text-xs text-gray-400 mb-1 block">{s.label}</label>
+                      <textarea value={crmMessages[s.key] ?? ''} rows={2}
+                        onChange={(e) => setCrmMessages(m => ({ ...m, [s.key]: e.target.value }))}
+                        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 resize-y" />
+                    </div>
+                  ))}
+                  <p className="text-xs text-gray-500">💡 O botão abre o WhatsApp/e-mail com a mensagem pronta — você revisa e clica enviar. Nada é disparado automaticamente.</p>
                 </div>
               )}
               <div className="overflow-x-auto">
@@ -852,7 +873,8 @@ export default function Dashboard() {
                         <td className="py-2">
                           {(() => {
                             const empresa = c.tradeName || c.corporateName || ''
-                            const msg = fillTemplate(crmMessage, c.firstName, empresa)
+                            const stage = c.funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
+                            const msg = fillTemplate(msgForStage(stage), c.firstName, empresa)
                             const wa = waDigits(c.phone)
                             return (
                               <div className="flex items-center gap-1.5">
