@@ -479,10 +479,21 @@ export default function Dashboard() {
   )
 
   const miniPieData = data
-    ? [
-        { name: 'Cadastros', value: data.summary.totalCustomers, fill: '#3b82f6' },
-        { name: 'Compraram', value: data.summary.purchasedCount, fill: '#10b981' },
-      ]
+    ? (() => {
+        const cs = data.customers
+        const stageOf = (c: Customer) => c.funnelStage ?? (c.purchased ? 'Comprou' : 'Só cadastrou')
+        const acessouPlus = new Set(['Acessou', 'Iniciou pedido', 'Chegou ao pagamento', 'Comprou'])
+        const pedidoPlus  = new Set(['Iniciou pedido', 'Chegou ao pagamento', 'Comprou'])
+        const pagtoPlus   = new Set(['Chegou ao pagamento', 'Comprou'])
+        const count = (set: Set<string>) => cs.filter(c => set.has(stageOf(c))).length
+        return [
+          { name: 'Cadastros',           value: data.summary.totalCustomers, fill: '#3b82f6' },
+          { name: 'Acessaram',           value: count(acessouPlus),          fill: '#6366f1' },
+          { name: 'Iniciaram pedido',    value: count(pedidoPlus),           fill: '#f59e0b' },
+          { name: 'Chegaram ao pagamento', value: count(pagtoPlus),          fill: '#f97316' },
+          { name: 'Compraram',           value: data.summary.purchasedCount, fill: '#10b981' },
+        ].filter(s => s.value > 0 || s.name === 'Cadastros' || s.name === 'Compraram')
+      })()
     : []
 
   const pieData = vendas
