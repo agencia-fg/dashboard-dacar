@@ -734,6 +734,35 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* Referência GA4 — tráfego do site (agregado, não por cliente) */}
+            {ga4Data && !ga4Error && (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h2 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-600 text-white text-xs font-bold">G</span>
+                    Tráfego do site — Google Analytics 4
+                  </h2>
+                  <span className="text-xs text-gray-500">Período: {ga4Data.startDate} → {ga4Data.endDate} · números do site todo, não ligáveis ao cliente</span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {[
+                    { label: 'Sessões',        value: ga4Data.sessions,    color: 'text-blue-400' },
+                    { label: 'Usuários ativos', value: ga4Data.users,      color: 'text-indigo-400' },
+                    { label: 'Add ao carrinho', value: ga4Data.addToCarts, color: 'text-amber-400' },
+                    { label: 'Checkout',       value: ga4Data.checkouts,   color: 'text-orange-400' },
+                    { label: 'Compras',        value: ga4Data.purchases,   color: 'text-green-400' },
+                    { label: 'Receita',        value: ga4Data.revenue,     color: 'text-green-400', money: true },
+                  ].map(k => (
+                    <div key={k.label} className="bg-gray-800/40 border border-gray-700/50 rounded-lg p-3 text-center">
+                      <div className={`text-lg font-bold ${k.color}`}>{k.money ? fmt(k.value) : k.value.toLocaleString('pt-BR')}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{k.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600 mt-3">💡 &quot;Add ao carrinho&quot; e &quot;Checkout&quot; vêm do GA4 e medem o site inteiro (visitantes anônimos incluídos). Não dá para cruzar com cada cliente — o funil acima, por cliente, vem da VTEX.</p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4">
                 <h2 className="text-sm font-semibold text-gray-300 mb-4">Cadastros × Compras por dia</h2>
