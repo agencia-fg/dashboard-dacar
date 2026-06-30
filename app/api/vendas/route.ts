@@ -51,8 +51,16 @@ interface OrderDetail {
   items?: OrderItem[]
 }
 
-// Kg → L (densidade ~1 para tintas base água / borracha líquida Dacar)
-const KG_TO_LITERS = 1.0
+// Densidade por categoria (Kg ÷ divisor = litros). Dados do laboratório Dacar.
+// Massa Corrida / Massa Acrílica / Efeito Decorativo: ÷1,70
+// Borracha Líquida: ÷1,25 | Textura: ÷1,85 | demais: ÷1,0 (Kg = L)
+function densityDivisor(name: string): number {
+  const n = name.toLowerCase()
+  if (/textura/.test(n)) return 1.85
+  if (/borracha/.test(n)) return 1.25
+  if (/massa|efeito\s*decorativo/.test(n)) return 1.70
+  return 1.0
+}
 
 // Regras de embalagem: tamanhos vendidos em pacote com N unidades
 // A quantidade VTEX (item.quantity) representa número de PACOTES
@@ -86,26 +94,31 @@ function getPackSize(liters: number): number {
 // Depois aplica o multiplicador de pacote
 // Case-insensitive. Cobre: 3,6 L / 3.6L / 18 Lt / 18 LT / 18 Litros / 900ml / 20 Kg
 function parseVolumeFromName(name: string): number {
-  let litersPerUnit = 0
+  let litersPerUnit = 0   // já convertido para litros (Kg aplica densidade)
+  let packBasis = 0       // valor rotulado (L ou Kg) usado para casar com PACK_RULES
+  const div = densityDivisor(name)
 
   // Mililitros: ml (separado para /1000 sem colidir com L)
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*ml\b/gi)]) {
-    litersPerUnit += parseFloat(m[1].replace(',', '.')) / 1000
+    const v = parseFloat(m[1].replace(',', '.')) / 1000
+    litersPerUnit += v; packBasis += v
   }
 
   // Litros: L, Lt, Lts, Litro, Litros
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:litros?|lts?|l)\b/gi)]) {
     const idx = m.index ?? 0
     if (idx > 0 && name[idx - 1].toLowerCase() === 'm') continue // já contado como ml
-    litersPerUnit += parseFloat(m[1].replace(',', '.'))
+    const v = parseFloat(m[1].replace(',', '.'))
+    litersPerUnit += v; packBasis += v
   }
 
-  // Kg → L
+  // Kg → L (aplica densidade da categoria; pacote casa pelo valor rotulado em Kg)
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*kgs?\b/gi)]) {
-    litersPerUnit += parseFloat(m[1].replace(',', '.')) * KG_TO_LITERS
+    const kg = parseFloat(m[1].replace(',', '.'))
+    litersPerUnit += kg / div; packBasis += kg
   }
 
-  const packSize = getPackSize(litersPerUnit)
+  const packSize = getPackSize(packBasis)
   return litersPerUnit * packSize
 }
 

@@ -17,17 +17,33 @@ const PACK_RULES = [
   { l: 0.225, p: 12 }, { l: 0.1125, p: 12 },
 ]
 function packSize(l: number) { return PACK_RULES.find(r => Math.abs(r.l - l) < 0.01)?.p ?? 1 }
-function parseVol(name: string): number {
-  let v = 0
-  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*ml\b/gi)]) v += parseFloat(m[1].replace(',', '.')) / 1000
+
+// Densidade por categoria (Kg ÷ divisor = litros). Dados do laboratório Dacar.
+function densityDivisor(name: string): number {
+  const n = name.toLowerCase()
+  if (/textura/.test(n)) return 1.85
+  if (/borracha/.test(n)) return 1.25
+  if (/massa|efeito\s*decorativo/.test(n)) return 1.70
+  return 1.0
+}
+
+// Retorna { liters, packBasis }: litros já convertidos e o valor rotulado p/ casar pacote
+function parseVol(name: string): { liters: number; packBasis: number } {
+  let liters = 0, packBasis = 0
+  const div = densityDivisor(name)
+  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*ml\b/gi)]) {
+    const v = parseFloat(m[1].replace(',', '.')) / 1000; liters += v; packBasis += v
+  }
   for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:litros?|lts?|l)\b/gi)]) {
     const idx = m.index ?? 0; if (idx > 0 && name[idx - 1].toLowerCase() === 'm') continue
-    v += parseFloat(m[1].replace(',', '.'))
+    const v = parseFloat(m[1].replace(',', '.')); liters += v; packBasis += v
   }
-  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*kgs?\b/gi)]) v += parseFloat(m[1].replace(',', '.'))
-  return v
+  for (const m of [...name.matchAll(/(\d+(?:[.,]\d+)?)\s*kgs?\b/gi)]) {
+    const kg = parseFloat(m[1].replace(',', '.')); liters += kg / div; packBasis += kg
+  }
+  return { liters, packBasis }
 }
-function itemVol(name: string): number { const r = parseVol(name); return r * packSize(r) }
+function itemVol(name: string): number { const { liters, packBasis } = parseVol(name); return liters * packSize(packBasis) }
 
 interface OListItem { orderId: string; totalValue: number; creationDate: string; status: string }
 
