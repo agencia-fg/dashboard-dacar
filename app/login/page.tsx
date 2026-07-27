@@ -35,7 +35,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="text-xl font-bold text-white">Dacar Tintas</h1>
+          <h1 className="text-xl font-bold text-white">Sales Analytics</h1>
           <p className="text-sm text-gray-400 mt-1">Dashboard de Conversão</p>
         </div>
 

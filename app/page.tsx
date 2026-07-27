@@ -626,7 +626,7 @@ export default function Dashboard() {
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white">Dacar Tintas — Dashboard</h1>
+          <h1 className="text-xl font-bold text-white">Sales Analytics</h1>
           <div className="flex gap-1 mt-2">
             {([['cadastros','Cadastros vs. Compras'],['vendas','Vendas & Recorrência'],['regioes','Regiões'],['evolucao','Evolução Anual'],['produtos','Ranking de Produtos'],['churn','Risco de Churn']] as const).map(([t, label]) => (
               <button key={t} onClick={() => handleTabChange(t)}
