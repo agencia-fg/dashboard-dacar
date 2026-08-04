@@ -32,10 +32,13 @@ function getFunnelStage(
   if (periodOrders.some(o => o.status !== 'canceled' && o.status !== 'unknown')) return 'Chegou ao pagamento'
   if (periodOrders.length > 0) return 'Iniciou pedido'
 
+  // "Acessou" = voltou ao site após o cadastro (>12h depois). O retorno pode ser
+  // em qualquer momento — inclusive após o fim da janela de análise —, pois a
+  // janela define QUANDO o cliente se cadastrou, não quando ele voltou.
   if (lastInteractionIn && createdIn) {
     const interaction = new Date(lastInteractionIn).getTime()
     const created = new Date(createdIn).getTime()
-    if (interaction > created + RETURN_VISIT_MARGIN_MS && interaction >= dateFromMs && interaction <= dateToMs) {
+    if (interaction > created + RETURN_VISIT_MARGIN_MS) {
       return 'Acessou'
     }
   }
